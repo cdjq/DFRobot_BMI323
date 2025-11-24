@@ -1,60 +1,31 @@
 /**
- * @file OrientationInterrupt.ino
- * @brief Demonstrates BMI323 orientation detection interrupt.
+ * @file FlatInterrupt.ino
+ * @brief Demonstrates BMI323 flat (plane) detection interrupt.
  *
  * Connect INT1 (or INT2) of BMI323 to the MCU pin defined by intPin.
- * When the board changes orientation (portrait/landscape, face up/down), the
- * interrupt will trigger and the sketch prints the new state.
+ * When the board is placed on a flat surface, the interrupt will trigger
+ * and the sketch prints a log.
+ *
+ * Flat detection is useful for:
+ * - Detecting when a device is placed on a table
+ * - Orientation detection (flat vs. tilted)
+ * - Power management (device is stationary)
  */
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
-volatile bool gOrientationChanged = false;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
+volatile bool gFlatDetected = false;
 
 #if defined(ESP8266)
-void IRAM_ATTR onOrientationISR()
+void IRAM_ATTR onFlatISR()
 #else
-void onOrientationISR()
+void onFlatISR()
 #endif
 {
-  gOrientationChanged = true;
-}
-
-/* 
-a. 0b00：portrait upright     竖屏直立 
-b. 0b01：landscape left       向左横屏 
-c. 0b10：portrait upside down 竖屏倒置 
-d. 0b11：landscape right      向右横屏
-*/
-static void printOrientation(uint8_t portraitLandscape, uint8_t faceUpDown) {
-  switch (portraitLandscape) {
-    case BMI3_LANDSCAPE_LEFT:
-      Serial.print("Landscape Left");
-      break;
-    case BMI3_LANDSCAPE_RIGHT:
-      Serial.print("Landscape Right");
-      break;
-    case BMI3_PORTRAIT_UP_DOWN:
-      Serial.print("Portrait Upside Down");
-      break;
-    case BMI3_PORTRAIT_UP_RIGHT:
-      Serial.print("Portrait Upright");
-      break;
-    default:
-      Serial.print("Unknown");
-      break;
-  }
-
-  Serial.print(" / ");
-
-  if (faceUpDown == BMI3_FACE_UP) {
-    Serial.println("Face Up");
-  } else if (faceUpDown == BMI3_FACE_DOWN) {
-    Serial.println("Face Down");
-  } else {
-    Serial.println("Unknown Face Orientation");
-  }
+  gFlatDetected = true;
 }
 
 void setup() {
@@ -63,8 +34,8 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("BMI323 Orientation Interrupt Demo");
-  Serial.println("Rotate the board to see orientation updates.\n");
+  Serial.println("BMI323 Flat Detection Interrupt Demo");
+  Serial.println("Keep the board on a flat surface to trigger flat interrupt.\n");
 
   while (!bmi323.begin()) {
     Serial.println("IMU init failed, retrying...");
@@ -73,18 +44,17 @@ void setup() {
 
   bmi323.configAccel(bmi323.eAccelODR100Hz, bmi323.eAccelRange2G);
 
-  // 使用官方示例的参数配置（参考 orientation.c）
-  struct bmi3_orientation_config orientCfg;
-  orientCfg.ud_en = BMI3_ENABLE;      // Enable face up/down detection
-  orientCfg.hold_time = 4;            // 4 * 20ms = 80ms
-  orientCfg.hysteresis = 5;           // Accel hysteresis
-  orientCfg.theta = 16;               // Max tilt angle
-  orientCfg.mode = 1;                 // High-asymmetrical
-  orientCfg.slope_thres = 30;         // Slope threshold
-  orientCfg.blocking = 3;             // Block when movement is large
+  // 使用官方示例的参数配置（参考 flat.c）
+  // 结构体字段顺序：theta, blocking, hysteresis, hold_time, slope_thres
+  struct bmi3_flat_config flatCfg;
+  flatCfg.theta = 9;              // Max tilt angle: 64 * (tan(angle)^2), range 0-63
+  flatCfg.blocking = 3;           // Blocking mode 3: Block if >1.5g or slope > threshold
+  flatCfg.hold_time = 50;         // Min duration in flat position: 50 * 20ms = 1000ms
+  flatCfg.hysteresis = 9;         // Hysteresis angle, range 0-255
+  flatCfg.slope_thres = 0xCD;     // Min slope between samples: 0xCD = 205
 
-  if (!bmi323.enableOrientationInterrupt(orientCfg, bmi323.eINT1)) {
-    Serial.println("Failed to enable orientation interrupt!");
+  if (!bmi323.enableFlatInterrupt(flatCfg, bmi323.eINT1)) {
+    Serial.println("Failed to enable flat interrupt!");
     while (1) {
       delay(1000);
     }
@@ -93,14 +63,14 @@ void setup() {
 #if defined(ESP32)
   // D6 pin is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins.
   pinMode(14 /*D6*/, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onOrientationISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onFlatISR, FALLING);
 #elif defined(ESP8266)
   pinMode(13, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(13), onOrientationISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(13), onFlatISR, FALLING);
 #elif defined(ARDUINO_SAM_ZERO)
   // Pin 6 is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins
   pinMode(6, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onOrientationISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onFlatISR, FALLING);
 #else
   /* The Correspondence Table of AVR Series Arduino Interrupt Pins And Terminal Numbers
    * ---------------------------------------------------------------------------------------
@@ -125,25 +95,20 @@ void setup() {
    * |-------------------------------------------------------------------------------------------------------------------------------------------|
    */
   pinMode(2, INPUT_PULLUP);  // UNO/Mega2560 use pin 2, Leonardo uses pin 3
-  attachInterrupt(/*Interrupt No*/ 0, onOrientationISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                                   // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  attachInterrupt(/*Interrupt No*/ 0, onFlatISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+                                                             // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
 #endif
 }
 
 void loop() {
-  if (gOrientationChanged) {
-    gOrientationChanged = false;
+  if (gFlatDetected) {
+    gFlatDetected = false;
 
     uint16_t status = bmi323.getInterruptStatus();
-    if (status & BMI3_INT_STATUS_ORIENTATION) {
-      uint8_t pl = 0;
-      uint8_t fud = 0;
-      if (bmi323.readOrientation(&pl, &fud)) {
-        Serial.print("Orientation: ");
-        printOrientation(pl, fud);
-      } else {
-        Serial.println("Failed to read orientation data.");
-      }
+    if (status & BMI3_INT_STATUS_FLAT) {
+      Serial.print("Flat surface detected at ");
+      Serial.print(millis());
+      Serial.println(" ms");
     }
   }
 }

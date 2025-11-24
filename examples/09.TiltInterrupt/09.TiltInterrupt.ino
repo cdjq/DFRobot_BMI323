@@ -1,24 +1,26 @@
 /**
- * @file NoMotionInterrupt.ino
- * @brief Demonstrates BMI323 no-motion (stillness) interrupt.
+ * @file TiltInterrupt.ino
+ * @brief Demonstrates BMI323 tilt detection interrupt.
  *
  * Connect INT1 (or INT2) of BMI323 to the MCU pin defined by intPin.
- * When the board remains still (below the configured threshold) for the
- * specified duration, the interrupt will trigger and the sketch prints a log.
+ * Tilt the board; when the tilt angle exceeds the configured threshold, an
+ * interrupt fires and the sketch prints a log.
  */
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
-volatile bool gNoMotionDetected = false;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
+volatile bool gTiltDetected = false;
 
 #if defined(ESP8266)
-void IRAM_ATTR onNoMotionISR()
+void IRAM_ATTR onTiltISR()
 #else
-void onNoMotionISR()
+void onTiltISR()
 #endif
 {
-  gNoMotionDetected = true;
+  gTiltDetected = true;
 }
 
 void setup() {
@@ -27,28 +29,24 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("BMI323 No-Motion Interrupt Demo");
-  Serial.println("Keep the board still to trigger no-motion.\n");
+  Serial.println("BMI323 Tilt Interrupt Demo");
+  Serial.println("Tilt the board to trigger the interrupt.\n");
 
   while (!bmi323.begin()) {
     Serial.println("IMU init failed, retrying...");
     delay(1000);
   }
 
-  bmi323.configAccel(bmi323.eAccelODR50Hz, bmi323.eAccelRange2G);
+  bmi323.configAccel(bmi323.eAccelODR100Hz, bmi323.eAccelRange2G);
 
-  // 使用官方示例的参数配置（参考 no_motion.c）
-  // 结构体字段顺序：duration, slope_thres, acc_ref_up, hysteresis, wait_time
-  struct bmi3_no_motion_config noMotionCfg;
-  noMotionCfg.duration = 9;        // 9 * 20ms = 180ms
-  noMotionCfg.slope_thres = 9;    // 9 * 1.953mg ≈ 17.6mg
-  noMotionCfg.acc_ref_up = 1;     // Always update reference
-  noMotionCfg.hysteresis = 5;     // 5 * 1.953mg ≈ 9.8mg
-  noMotionCfg.wait_time = 5;      // 5 * 20ms = 100ms
+  // 使用官方示例的参数配置（参考 tilt.c）
+  struct bmi3_tilt_config tiltCfg;
+  tiltCfg.segment_size = 90;        // Averaging window (0-255)
+  tiltCfg.min_tilt_angle = 200;     // Minimum tilt angle (0-255, value = 256 * cos(angle))
+  tiltCfg.beta_acc_mean = 0x00FF;   // Low-pass smoothing coefficient
 
-  if (!bmi323.enableNoMotionInterrupt(noMotionCfg, bmi323.eINT1,
-                                      bmi323.eAxisXYZ)) {
-    Serial.println("Failed to enable no-motion interrupt!");
+  if (!bmi323.enableTiltInterrupt(tiltCfg, bmi323.eINT1)) {
+    Serial.println("Failed to enable tilt interrupt!");
     while (1) {
       delay(1000);
     }
@@ -57,14 +55,14 @@ void setup() {
 #if defined(ESP32)
   // D6 pin is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins.
   pinMode(14 /*D6*/, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onNoMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onTiltISR, FALLING);
 #elif defined(ESP8266)
   pinMode(13, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(13), onNoMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(13), onTiltISR, FALLING);
 #elif defined(ARDUINO_SAM_ZERO)
   // Pin 6 is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins
   pinMode(6, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onNoMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onTiltISR, FALLING);
 #else
   /* The Correspondence Table of AVR Series Arduino Interrupt Pins And Terminal Numbers
    * ---------------------------------------------------------------------------------------
@@ -89,18 +87,18 @@ void setup() {
    * |-------------------------------------------------------------------------------------------------------------------------------------------|
    */
   pinMode(2, INPUT_PULLUP);  // UNO/Mega2560 use pin 2, Leonardo uses pin 3
-  attachInterrupt(/*Interrupt No*/ 0, onNoMotionISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                                 // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  attachInterrupt(/*Interrupt No*/ 0, onTiltISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+                                                             // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
 #endif
 }
 
 void loop() {
-  if (gNoMotionDetected) {
-    gNoMotionDetected = false;
+  if (gTiltDetected) {
+    gTiltDetected = false;
 
     uint16_t status = bmi323.getInterruptStatus();
-    if (status & BMI3_INT_STATUS_NO_MOTION) {
-      Serial.print("No-motion detected at ");
+    if (status & BMI3_INT_STATUS_TILT) {
+      Serial.print("Tilt detected at ");
       Serial.print(millis());
       Serial.println(" ms");
     }

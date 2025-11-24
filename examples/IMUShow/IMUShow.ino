@@ -13,7 +13,9 @@
 #include "DFRobot_BMI323.h"
 #include <math.h>
 
-DFRobot_BMI323 bmi323;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
 
 static const float kAccelScale = 1.0f / 16384.0f; // ±2g -> 16384 LSB per g
 static const float kGyroScale = 250.0f / 32768.0f; // ±250 dps -> scale factor

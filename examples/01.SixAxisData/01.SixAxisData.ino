@@ -11,7 +11,9 @@
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
 
 void setup() {
   Serial.begin(115200);

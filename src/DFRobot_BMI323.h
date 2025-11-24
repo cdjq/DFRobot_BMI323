@@ -131,8 +131,9 @@ public:
    * @fn DFRobot_BMI323
    * @brief 构造函数 - I2C接口
    * @param wire TwoWire对象指针，默认&Wire
+   * @param i2cAddr I2C地址，默认0x69
    */
-  DFRobot_BMI323(TwoWire *wire = &Wire);
+  DFRobot_BMI323(TwoWire *wire = &Wire, uint8_t i2cAddr = 0x69);
   ~DFRobot_BMI323();
 
   /**

@@ -1,29 +1,25 @@
 /**
- * @file FlatInterrupt.ino
- * @brief Demonstrates BMI323 flat (plane) detection interrupt.
+ * @file StepCounter.ino
+ * @brief Simple BMI323 pedometer example
  *
- * Connect INT1 (or INT2) of BMI323 to the MCU pin defined by intPin.
- * When the board is placed on a flat surface, the interrupt will trigger
- * and the sketch prints a log.
- *
- * Flat detection is useful for:
- * - Detecting when a device is placed on a table
- * - Orientation detection (flat vs. tilted)
- * - Power management (device is stationary)
+ * The BMI323 integrates a hardware step counter. This sketch shows how to
+ * enable the feature and poll the accumulated step count once per second.
  */
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
-volatile bool gFlatDetected = false;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
+volatile bool gStepReady = false;
 
 #if defined(ESP8266)
-void IRAM_ATTR onFlatISR()
+void IRAM_ATTR onStepInterrupt(void)
 #else
-void onFlatISR()
+void onStepInterrupt(void)
 #endif
 {
-  gFlatDetected = true;
+  gStepReady = true;
 }
 
 void setup() {
@@ -32,27 +28,20 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("BMI323 Flat Detection Interrupt Demo");
-  Serial.println("Keep the board on a flat surface to trigger flat interrupt.\n");
+  Serial.println("BMI323 Step Counter Demo");
+  Serial.println("========================");
 
   while (!bmi323.begin()) {
-    Serial.println("IMU init failed, retrying...");
+    Serial.println("I2C init failed, retry in 1s");
     delay(1000);
   }
 
-  bmi323.configAccel(bmi323.eAccelODR100Hz, bmi323.eAccelRange2G);
+  // 推荐配置：100Hz、±2g
+  bmi323.configAccel(bmi323.eAccelODR100Hz,
+                     bmi323.eAccelRange2G);
 
-  // 使用官方示例的参数配置（参考 flat.c）
-  // 结构体字段顺序：theta, blocking, hysteresis, hold_time, slope_thres
-  struct bmi3_flat_config flatCfg;
-  flatCfg.theta = 9;              // Max tilt angle: 64 * (tan(angle)^2), range 0-63
-  flatCfg.blocking = 3;           // Blocking mode 3: Block if >1.5g or slope > threshold
-  flatCfg.hold_time = 50;         // Min duration in flat position: 50 * 20ms = 1000ms
-  flatCfg.hysteresis = 9;         // Hysteresis angle, range 0-255
-  flatCfg.slope_thres = 0xCD;     // Min slope between samples: 0xCD = 205
-
-  if (!bmi323.enableFlatInterrupt(flatCfg, bmi323.eINT1)) {
-    Serial.println("Failed to enable flat interrupt!");
+  if (!bmi323.enableStepCounterInterrupt(bmi323.eINT1)) {
+    Serial.println("Enable step counter interrupt failed!");
     while (1) {
       delay(1000);
     }
@@ -61,14 +50,14 @@ void setup() {
 #if defined(ESP32)
   // D6 pin is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins.
   pinMode(14 /*D6*/, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onFlatISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onStepInterrupt, FALLING);
 #elif defined(ESP8266)
   pinMode(13, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(13), onFlatISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(13), onStepInterrupt, FALLING);
 #elif defined(ARDUINO_SAM_ZERO)
   // Pin 6 is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins
   pinMode(6, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onFlatISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onStepInterrupt, FALLING);
 #else
   /* The Correspondence Table of AVR Series Arduino Interrupt Pins And Terminal Numbers
    * ---------------------------------------------------------------------------------------
@@ -93,21 +82,22 @@ void setup() {
    * |-------------------------------------------------------------------------------------------------------------------------------------------|
    */
   pinMode(2, INPUT_PULLUP);  // UNO/Mega2560 use pin 2, Leonardo uses pin 3
-  attachInterrupt(/*Interrupt No*/ 0, onFlatISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                             // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  attachInterrupt(/*Interrupt No*/ 0, onStepInterrupt, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+                                                                   // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
 #endif
+
+  Serial.println("Connect BMI323 INT1 to the defined MCU pin.");
+  Serial.println("Every step will trigger an interrupt and update the counter.\n");
 }
 
 void loop() {
-  if (gFlatDetected) {
-    gFlatDetected = false;
+  if (gStepReady) {
+    gStepReady = false;
 
-    uint16_t status = bmi323.getInterruptStatus();
-    if (status & BMI3_INT_STATUS_FLAT) {
-      Serial.print("Flat surface detected at ");
-      Serial.print(millis());
-      Serial.println(" ms");
+    uint16_t steps = 0;
+    if (bmi323.readStepCounter(&steps) == BMI3_OK) {
+      Serial.print("Steps: ");
+      Serial.println(steps);
     }
   }
 }
-

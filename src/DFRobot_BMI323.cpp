@@ -21,11 +21,12 @@ static DFRobot_BMI323* g_bmi323_instance = NULL;
 
 // ========== 构造函数和析构函数 ==========
 
-DFRobot_BMI323::DFRobot_BMI323(TwoWire *wire) {
+DFRobot_BMI323::DFRobot_BMI323(TwoWire *wire, uint8_t i2cAddr) {
   _wire = wire;
   _initialized = false;
   _accelRange = 2.0f;
   _gyroRange = 250.0f;
+  _i2cAddr = i2cAddr;
   memset(&_dev, 0, sizeof(_dev));
   memset(&_intMapConfig, 0, sizeof(_intMapConfig));
   memset(&_featureEnable, 0, sizeof(_featureEnable));
@@ -43,9 +44,6 @@ DFRobot_BMI323::~DFRobot_BMI323() {
 // ========== 初始化函数 ==========
 
 bool DFRobot_BMI323::begin(void) {
-  // 设置I2C地址
-  _i2cAddr = 0x69;
-  
   if (_initialized) {
     return true;
   }
@@ -361,9 +359,18 @@ uint16_t DFRobot_BMI323::getInterruptStatus(void) {
   }
 
   uint16_t int_status = 0;
-  int8_t rslt = bmi323_get_int1_status(&int_status, &_dev);
-  if (rslt != BMI323_OK) {
-    return 0;
+  uint16_t int1_status = 0;
+  uint16_t int2_status = 0;
+
+  // 读取 INT1 状态
+  int8_t rslt1 = bmi323_get_int1_status(&int1_status, &_dev);
+  // 读取 INT2 状态
+  int8_t rslt2 = bmi323_get_int2_status(&int2_status, &_dev);
+
+  // 合并两个中断引脚的状态（使用 OR 操作）
+  // 这样无论中断映射到哪个引脚，都能正确读取到状态
+  if (rslt1 == BMI323_OK || rslt2 == BMI323_OK) {
+    int_status = int1_status | int2_status;
   }
 
   return int_status;

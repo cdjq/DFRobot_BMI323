@@ -1,23 +1,30 @@
 /**
- * @file StepCounter.ino
- * @brief Simple BMI323 pedometer example
+ * @file SigMotionInterrupt.ino
+ * @brief Demonstrates BMI323 significant motion (sig-motion) interrupt.
  *
- * The BMI323 integrates a hardware step counter. This sketch shows how to
- * enable the feature and poll the accumulated step count once per second.
+ * Connect INT1 (or INT2) of BMI323 to the MCU pin defined by intPin.
+ * When the board moves in the same direction (significant motion), the
+ * interrupt will trigger and the sketch prints a log.
+ *
+ * Significant motion is different from any-motion:
+ * - Any-motion: Detects any movement exceeding threshold
+ * - Sig-motion: Detects sustained movement in the same direction
  */
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
-volatile bool gStepReady = false;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
+volatile bool gSigMotionDetected = false;
 
 #if defined(ESP8266)
-void IRAM_ATTR onStepInterrupt(void)
+void IRAM_ATTR onSigMotionISR()
 #else
-void onStepInterrupt(void)
+void onSigMotionISR()
 #endif
 {
-  gStepReady = true;
+  gSigMotionDetected = true;
 }
 
 void setup() {
@@ -26,20 +33,27 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("BMI323 Step Counter Demo");
-  Serial.println("========================");
+  Serial.println("BMI323 Significant Motion Interrupt Demo");
+  Serial.println("Move the board in the same direction to trigger sig-motion.\n");
 
   while (!bmi323.begin()) {
-    Serial.println("I2C init failed, retry in 1s");
+    Serial.println("IMU init failed, retrying...");
     delay(1000);
   }
 
-  // 推荐配置：100Hz、±2g
-  bmi323.configAccel(bmi323.eAccelODR100Hz,
-                     bmi323.eAccelRange2G);
+  bmi323.configAccel(bmi323.eAccelODR100Hz, bmi323.eAccelRange2G);
 
-  if (!bmi323.enableStepCounterInterrupt(bmi323.eINT1)) {
-    Serial.println("Enable step counter interrupt failed!");
+  // 使用官方示例的参数配置（参考 sig_motion.c）
+  // 结构体字段顺序：block_size, peak_2_peak_min, mcr_min, peak_2_peak_max, mcr_max
+  struct bmi3_sig_motion_config sigMotionCfg;
+  sigMotionCfg.block_size = 200;        // Size of segment for detection (0-65535)
+  sigMotionCfg.peak_2_peak_min = 30;    // Min peak-to-peak acceleration (0-1023)
+  sigMotionCfg.peak_2_peak_max = 30;    // Max peak-to-peak acceleration (0-1023)
+  sigMotionCfg.mcr_min = 0x10;          // Min mean crossing rate per second (0-62)
+  sigMotionCfg.mcr_max = 0x10;          // Max mean crossing rate per second (0-62)
+
+  if (!bmi323.enableSigMotionInterrupt(sigMotionCfg, bmi323.eINT1)) {
+    Serial.println("Failed to enable sig-motion interrupt!");
     while (1) {
       delay(1000);
     }
@@ -48,14 +62,14 @@ void setup() {
 #if defined(ESP32)
   // D6 pin is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins.
   pinMode(14 /*D6*/, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onStepInterrupt, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onSigMotionISR, FALLING);
 #elif defined(ESP8266)
   pinMode(13, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(13), onStepInterrupt, FALLING);
+  attachInterrupt(digitalPinToInterrupt(13), onSigMotionISR, FALLING);
 #elif defined(ARDUINO_SAM_ZERO)
   // Pin 6 is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins
   pinMode(6, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onStepInterrupt, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onSigMotionISR, FALLING);
 #else
   /* The Correspondence Table of AVR Series Arduino Interrupt Pins And Terminal Numbers
    * ---------------------------------------------------------------------------------------
@@ -80,22 +94,21 @@ void setup() {
    * |-------------------------------------------------------------------------------------------------------------------------------------------|
    */
   pinMode(2, INPUT_PULLUP);  // UNO/Mega2560 use pin 2, Leonardo uses pin 3
-  attachInterrupt(/*Interrupt No*/ 0, onStepInterrupt, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                                   // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  attachInterrupt(/*Interrupt No*/ 0, onSigMotionISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+                                                                 // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
 #endif
-
-  Serial.println("Connect BMI323 INT1 to the defined MCU pin.");
-  Serial.println("Every step will trigger an interrupt and update the counter.\n");
 }
 
 void loop() {
-  if (gStepReady) {
-    gStepReady = false;
+  if (gSigMotionDetected) {
+    gSigMotionDetected = false;
 
-    uint16_t steps = 0;
-    if (bmi323.readStepCounter(&steps) == BMI3_OK) {
-      Serial.print("Steps: ");
-      Serial.println(steps);
+    uint16_t status = bmi323.getInterruptStatus();
+    if (status & BMI3_INT_STATUS_SIG_MOTION) {
+      Serial.print("Significant motion detected at ");
+      Serial.print(millis());
+      Serial.println(" ms");
     }
   }
 }
+

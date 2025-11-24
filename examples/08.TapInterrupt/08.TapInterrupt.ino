@@ -1,24 +1,40 @@
 /**
- * @file AnyMotionInterrupt.ino
- * @brief Demonstrates BMI323 any-motion (slope) interrupt on INT1/INT2.
+ * @file TapInterrupt.ino
+ * @brief Demonstrates BMI323 tap detection (single/double/triple) interrupt.
  *
- * Connect INT1 of BMI323 to the MCU pin defined by intPin. Whenever the
- * sensor detects motion exceeding the configured threshold for the specified
- * duration, an interrupt will fire and the sketch will log the event.
+ * Connect INT2 (default) of BMI323 to the MCU pin defined by intPin.
+ * Tap the sensor gently to trigger single/double/triple tap events.
  */
 
 #include "DFRobot_BMI323.h"
 
-DFRobot_BMI323 bmi323;
-volatile bool gMotionDetected = false;
+#define BMI323_I2C_ADDR 0x69
+
+DFRobot_BMI323 bmi323(&Wire, BMI323_I2C_ADDR);
+volatile bool gTapPending = false;
 
 #if defined(ESP8266)
-void IRAM_ATTR onAnyMotionISR()
+void IRAM_ATTR onTapISR()
 #else
-void onAnyMotionISR()
+void onTapISR()
 #endif
 {
-  gMotionDetected = true;
+  gTapPending = true;
+}
+
+static void printTap(uint8_t mask) {
+  if (mask & BMI3_TAP_DET_STATUS_SINGLE) {
+    Serial.println("Single tap detected.");
+  }
+  if (mask & BMI3_TAP_DET_STATUS_DOUBLE) {
+    Serial.println("Double tap detected.");
+  }
+  if (mask & BMI3_TAP_DET_STATUS_TRIPLE) {
+    Serial.println("Triple tap detected.");
+  }
+  if (mask == 0) {
+    Serial.println("Tap interrupt, but no tap flag set.");
+  }
 }
 
 void setup() {
@@ -27,28 +43,32 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("BMI323 Any-Motion Interrupt Demo");
-  Serial.println("Move the board to trigger an interrupt.\n");
+  Serial.println("BMI323 Tap Interrupt Demo");
+  Serial.println("Tap the sensor to trigger single/double/triple tap.\n");
 
   while (!bmi323.begin()) {
     Serial.println("IMU init failed, retrying...");
     delay(1000);
   }
 
-  bmi323.configAccel(bmi323.eAccelODR100Hz, bmi323.eAccelRange2G);
+  bmi323.configAccel(bmi323.eAccelODR400Hz, bmi323.eAccelRange4G);
 
-  // 使用官方示例的参数配置（参考 any_no_motion_enable_disable.c）
-  // 结构体字段顺序：duration, slope_thres, acc_ref_up, hysteresis, wait_time
-  struct bmi3_any_motion_config anyMotionCfg;
-  anyMotionCfg.duration = 9;        // 9 * 20ms = 180ms
-  anyMotionCfg.slope_thres = 9;      // 9 * 1.953mg ≈ 17.6mg
-  anyMotionCfg.acc_ref_up = 1;       // Always update reference
-  anyMotionCfg.hysteresis = 5;       // 5 * 1.953mg ≈ 9.8mg
-  anyMotionCfg.wait_time = 4;        // 4 * 20ms = 80ms
+  // 使用官方示例的参数配置（参考 tap.c）
+  struct bmi3_tap_detector_config tapCfg;
+  memset(&tapCfg, 0, sizeof(tapCfg));
+  tapCfg.axis_sel = 1;                    // 使用Y轴
+  tapCfg.max_dur_between_peaks = 5;
+  tapCfg.max_gest_dur = 0x11;
+  tapCfg.max_peaks_for_tap = 5;
+  tapCfg.min_quite_dur_between_taps = 7;
+  tapCfg.mode = 1;                        // Normal
+  tapCfg.quite_time_after_gest = 5;
+  tapCfg.tap_peak_thres = 0x2C;
+  tapCfg.tap_shock_settling_dur = 5;
+  tapCfg.wait_for_timeout = 1;            // Gesture confirmation
 
-  if (!bmi323.enableAnyMotionInterrupt(anyMotionCfg, bmi323.eINT1,
-                                       bmi323.eAxisXYZ)) {
-    Serial.println("Failed to enable any-motion interrupt!");
+  if (!bmi323.enableTapInterrupt(tapCfg, bmi323.eINT1)) {
+    Serial.println("Failed to enable tap interrupt!");
     while (1) {
       delay(1000);
     }
@@ -57,14 +77,14 @@ void setup() {
 #if defined(ESP32)
   // D6 pin is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins.
   pinMode(14 /*D6*/, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onAnyMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(14 /*D6*/) /* Query the interrupt number of the D6 pin */, onTapISR, FALLING);
 #elif defined(ESP8266)
   pinMode(13, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(13), onAnyMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(13), onTapISR, FALLING);
 #elif defined(ARDUINO_SAM_ZERO)
   // Pin 6 is used as interrupt pin by default, other non-conflicting pins can also be selected as external interrupt pins
   pinMode(6, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onAnyMotionISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6) /* Query the interrupt number of the 6 pin */, onTapISR, FALLING);
 #else
   /* The Correspondence Table of AVR Series Arduino Interrupt Pins And Terminal Numbers
    * ---------------------------------------------------------------------------------------
@@ -88,21 +108,24 @@ void setup() {
    * |no need to set it to input mode with pinMode)|Interrupt No|Interrupt number is a pin digital value, such as P0 interrupt number 0, P1 is 1 |
    * |-------------------------------------------------------------------------------------------------------------------------------------------|
    */
-  pinMode(2, INPUT_PULLUP);  // UNO/Mega2560 use pin 2, Leonardo uses pin 3
-  attachInterrupt(/*Interrupt No*/ 0, onAnyMotionISR, FALLING);  // Open the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                                 // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  pinMode(3, INPUT_PULLUP);  // UNO/Mega2560 use pin 3, Leonardo uses pin 2
+  attachInterrupt(/*Interrupt No*/ 1, onTapISR, FALLING);  // Open the external interrupt 1, connect INT1/2 to the digital pin of the main control:
+                                                           // UNO(3), Mega2560(3), Leonardo(2), microbit(P1).
 #endif
 }
 
 void loop() {
-  if (gMotionDetected) {
-    gMotionDetected = false;
+  if (gTapPending) {
+    gTapPending = false;
 
     uint16_t status = bmi323.getInterruptStatus();
-    if (status & BMI3_INT_STATUS_ANY_MOTION) {
-      Serial.print("Any-motion detected at ");
-      Serial.print(millis());
-      Serial.println(" ms");
+    if (status & BMI3_INT_STATUS_TAP) {
+      uint8_t tapMask = 0;
+      if (bmi323.readTapStatus(&tapMask)) {
+        printTap(tapMask);
+      } else {
+        Serial.println("Failed to read tap status.");
+      }
     }
   }
 }
