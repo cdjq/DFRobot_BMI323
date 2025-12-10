@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "Kconfig": "kconfig",
+        "bmi323.h": "c",
+        "common.h": "c",
+        "bmi3.h": "c",
+        "bmi323_defs.h": "c",
+        "array": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "initializer_list": "cpp"
+    },
+    "search.useIgnoreFiles": false
+}

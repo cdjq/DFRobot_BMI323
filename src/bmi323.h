@@ -739,9 +739,7 @@ int8_t bmi323_read_fifo_data(struct bmi3_fifo_frame *fifo, struct bmi3_dev *dev)
  * @retval < 0 -> Fail
  *
  */
-int8_t bmi323_extract_accel(struct bmi3_fifo_sens_axes_data *accel_data,
-                            struct bmi3_fifo_frame *fifo,
-                            const struct bmi3_dev *dev);
+int8_t bmi323_extract_accel(struct bmi3_fifo_sens_axes_data *accel_data, struct bmi3_fifo_frame *fifo, const struct bmi3_dev *dev);
 
 /**
  * \ingroup bmi323
@@ -772,9 +770,7 @@ int8_t bmi323_extract_accel(struct bmi3_fifo_sens_axes_data *accel_data,
  * @retval < 0 -> Fail
  *
  */
-int8_t bmi323_extract_gyro(struct bmi3_fifo_sens_axes_data *gyro_data,
-                           struct bmi3_fifo_frame *fifo,
-                           const struct bmi3_dev *dev);
+int8_t bmi323_extract_gyro(struct bmi3_fifo_sens_axes_data *gyro_data, struct bmi3_fifo_frame *fifo, const struct bmi3_dev *dev);
 
 /**
  * \ingroup bmi323
@@ -805,9 +801,7 @@ int8_t bmi323_extract_gyro(struct bmi3_fifo_sens_axes_data *gyro_data,
  * @retval < 0 -> Fail
  *
  */
-int8_t bmi323_extract_temperature(struct bmi3_fifo_temperature_data *temp_data,
-                                  struct bmi3_fifo_frame *fifo,
-                                  const struct bmi3_dev *dev);
+int8_t bmi323_extract_temperature(struct bmi3_fifo_temperature_data *temp_data, struct bmi3_fifo_frame *fifo, const struct bmi3_dev *dev);
 
 /**
  * \ingroup bmi323
@@ -1036,9 +1030,7 @@ int8_t bmi323_perform_self_test(uint8_t st_selection, struct bmi3_st_result *st_
  *  @retval 0 -> Success
  *  @retval < 0 -> Fail
  */
-int8_t bmi323_get_feature_engine_error_status(uint8_t *feature_engine_err_reg_lsb,
-                                              uint8_t *feature_engine_err_reg_msb,
-                                              struct bmi3_dev *dev);
+int8_t bmi323_get_feature_engine_error_status(uint8_t *feature_engine_err_reg_lsb, uint8_t *feature_engine_err_reg_msb, struct bmi3_dev *dev);
 
 /**
  * \ingroup bmi323
@@ -1119,10 +1111,7 @@ int8_t bmi323_get_config_version(struct bmi3_config_version *version, struct bmi
  *  @retval 0 -> Success
  *  @retval < 0 -> Fail
  */
-int8_t bmi323_perform_gyro_sc(uint8_t sc_selection,
-                              uint8_t apply_corr,
-                              struct bmi3_self_calib_rslt *sc_rslt,
-                              struct bmi3_dev *dev);
+int8_t bmi323_perform_gyro_sc(uint8_t sc_selection, uint8_t apply_corr, struct bmi3_self_calib_rslt *sc_rslt, struct bmi3_dev *dev);
 
 /**
  * \ingroup bmi323
@@ -1612,8 +1601,7 @@ int8_t bmi323_get_i3c_ibi_status(uint16_t *int_status, struct bmi3_dev *dev);
  *  @retval 0 -> Success
  *  @retval < 0 -> Fail
  */
-int8_t bmi323_get_acc_gyr_off_gain_reset(uint8_t *acc_off_gain_reset, uint8_t *gyr_off_gain_reset,
-                                         struct bmi3_dev *dev);
+int8_t bmi323_get_acc_gyr_off_gain_reset(uint8_t *acc_off_gain_reset, uint8_t *gyr_off_gain_reset, struct bmi3_dev *dev);
 
 /*!
  * \ingroup bmi323AccGyrUsrGainOff

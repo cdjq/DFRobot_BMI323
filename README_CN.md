@@ -1,365 +1,388 @@
-# DFRobot_BMP58X
+# DFRobot_BMI323
+- [English Version](./README.md)
 
-* [English Version](./README.md)
+BMI323 是一款低功耗、高性能的 6 轴 IMU 传感器，集成了 3 轴加速度计和 3 轴陀螺仪。它通过 I2C 接口通信，提供全面的运动检测功能，包括计步、任意运动检测、无运动检测、显著运动检测、敲击检测、倾斜检测、方向检测和平面检测。
 
-这是一个BMP58X的库，功能是读取温度和压力。BMP(585/581)是一款基于可靠传感原理的压力和温度测量数字传感器。
+该传感器非常适合可穿戴设备、智能手表、健身追踪器和物联网应用，这些应用对运动感知和能效要求很高。BMI323 具有基于硬件的运动检测算法，可独立运行，无需 MCU 持续干预即可实现超低功耗。通过可配置的中断引脚（INT1 和 INT2），传感器可以高效地通知主机系统运动事件，非常适合电池供电的应用。
 
-### SEN0664
+**主要特性：**
+
+- 6 轴运动感知（3 轴加速度计 + 3 轴陀螺仪）
+- 硬件计步器，支持中断
+- 多种运动检测模式（任意运动、无运动、显著运动）
+- 手势识别（敲击、倾斜、方向、平面检测）
+- 可配置输出数据速率（ODR），从 0.78Hz 到 6400Hz
+- 多种工作模式（低功耗、普通、高性能）
+- I2C 接口，可配置地址（0x68/0x69）
+- 双中断引脚，灵活的事件处理
+
 <p align="center">
-  <img src="./resources/images/SEN0664 (3).png" width="45%">
-  <img src="./resources/images/SEN0664 (4).png" width="45%">
+  <img src="./resources/images/SEN0693(1).png" width="45%">
+  <img src="./resources/images/SEN0693(2).png" width="40%">
 </p>
 
-### SEN0665
-<p align="center">
-  <img src="./resources/images/SEN0665 (1).png" width="45%">
-  <img src="./resources/images/SEN0665 (2).png" width="45%">
-</p>
-
-### SEN0666
-<p align="center">
-  <img src="./resources/images/SEN0666 (3).png" width="45%">
-  <img src="./resources/images/SEN0666 (4).png" width="45%">
-</p>
-
-### SEN0667
-<p align="center">
-  <img src="./resources/images/SEN0667 (1).png" width="45%">
-  <img src="./resources/images/SEN0667 (2).png" width="45%">
-</p>
-
-
-## 产品链接(https://www.dfrobot.com)
-    SKU: SEN0664/SEN0665/SEN0666/SEN0667
+## 产品链接 (https://www.dfrobot.com)
+    SKU: SEN0693
 
 ## 目录
 
-* [概述](#概述)
-* [库安装](#库安装)
-* [方法](#方法)
-* [兼容性](#兼容性)
-* [历史](#历史)
-* [创作者](#创作者)
+  * [概述](#概述)
+  * [库安装](#库安装)
+  * [方法](#方法)
+  * [兼容性](#兼容性)
+  * [历史](#历史)
+  * [创作者](#创作者)
 
 ## 概述
 
-* 该库支持BMP585/581传感器。
-* 该库支持读取温度和压力。
-* 该库支持设置传感器的工作模式。
-* 该库支持设置传感器的输出数据率。
-* 该库支持设置传感器的过采样率。
-* 该库支持设置传感器的IIR滤波器系数。
-* 该库支持设置传感器的FIFO操作。
-* 该库支持设置传感器的中断行为。
-* 该库支持设置传感器的压力超限检测。
-* 该库支持读取传感器的中断状态。
+本 Arduino 库为 BMI323 6 轴 IMU 传感器提供全面的接口。它支持：
+
+**基本功能：**
+
+- 通过 I2C 接口初始化传感器
+- 配置加速度计和陀螺仪参数（ODR、量程、工作模式）
+- 同时读取 6 轴传感器数据（加速度计 + 陀螺仪）
+
+**高级功能：**
+
+- 计步器，支持中断
+- 任意运动检测中断
+- 无运动检测中断
+- 显著运动检测中断
+- 平面检测中断
+- 方向检测中断（横竖屏、正反面）
+- 敲击检测中断（单击/双击/三击）
+- 倾斜检测中断
+
+所有运动检测功能都支持可配置阈值，并可映射到 INT1 或 INT2 中断引脚，实现灵活的系统集成。
 
 ## 库安装
 
-使用此库前，请首先安装依赖库 DFRobot_RTU，让后再下载库文件，将其粘贴到\Arduino\libraries目录中，然后打开examples文件夹并在该文件夹中运行演示。
+要使用本库，请先下载库文件，将其粘贴到 \Arduino\libraries 目录，然后打开 examples 文件夹并运行其中的示例程序。
 
 ## 方法
 
 ```C++
-/**
- * @fn begin
- * @brief 初始化传感器硬件接口
- * @return 初始化成功返回true，失败返回false
- */
-bool begin(void);
+  /**
+   * @fn DFRobot_BMI323
+   * @brief 构造函数
+   * @details 构造函数 - I2C 接口
+   * @param wire TwoWire 对象指针，默认为 &Wire
+   * @param i2cAddr I2C 地址，默认为 0x69
+   * @return 无
+   */
+  DFRobot_BMI323(TwoWire *wire = &Wire, uint8_t i2cAddr = 0x69);
 
-/**
- * @fn setODR
- * @brief 配置传感器输出数据率(ODR)
- * @param odr 输出数据率选择(见: eOdr_t)
- * @n 可用速率:
- * @n - eOdr240Hz:    输出速率240 Hz
- * @n - eOdr218_5Hz:  输出速率218.5 Hz
- * @n - eOdr199_1Hz:  输出速率199.1 Hz
- * @n - eOdr179_2Hz:  输出速率179.2 Hz
- * @n - eOdr160Hz:    输出速率160 Hz
- * @n - eOdr149_3Hz:  输出速率149.3 Hz
- * @n - eOdr140Hz:    输出速率140 Hz
- * @n - eOdr129_8Hz:  输出速率129.8 Hz
- * @n - eOdr120Hz:    输出速率120 Hz
- * @n - eOdr110_1Hz:  输出速率110.1 Hz
- * @n - eOdr100_2Hz:  输出速率100.2 Hz
- * @n - eOdr89_6Hz:   输出速率89.6 Hz
- * @n - eOdr80Hz:     输出速率80 Hz
- * @n - eOdr70Hz:     输出速率70 Hz
- * @n - eOdr60Hz:     输出速率60 Hz
- * @n - eOdr50Hz:     输出速率50 Hz
- * @n - eOdr45Hz:     输出速率45 Hz
- * @n - eOdr40Hz:     输出速率40 Hz
- * @n - eOdr35Hz:     输出速率35 Hz
- * @n - eOdr30Hz:     输出速率30 Hz
- * @n - eOdr25Hz:     输出速率25 Hz
- * @n - eOdr20Hz:     输出速率20 Hz
- * @n - eOdr15Hz:     输出速率15 Hz
- * @n - eOdr10Hz:     输出速率10 Hz
- * @n - eOdr5Hz:      输出速率5 Hz
- * @n - eOdr4Hz:      输出速率4 Hz
- * @n - eOdr3Hz:      输出速率3 Hz
- * @n - eOdr2Hz:      输出速率2 Hz
- * @n - eOdr1Hz:      输出速率1 Hz
- * @n - eOdr0_5Hz:    输出速率0.5 Hz
- * @n - eOdr0_250Hz:  输出速率0.250 Hz
- * @n - eOdr0_125Hz:  输出速率0.125 Hz
- * @return 成功返回0，错误返回1
- */
-uint8_t setODR(eODR_t odr);
+  /**
+   * @fn begin
+   * @brief 初始化函数
+   * @details 初始化 I2C 接口、芯片寄存器和功能上下文
+   * @param 无
+   * @return bool 类型，表示初始化状态
+   * @retval true 初始化成功
+   * @retval false 初始化失败
+   */
+  bool begin(void);
 
-/**
- * @fn setOSR
- * @brief 设置温度和压力的过采样率
- * @param osrTemp 温度过采样(见: eOverSampling_t)
- * @param osrPress 压力过采样(见: eOverSampling_t)
- * @n 支持的值:
- * @n - eOverSampling1:   1倍过采样
- * @n - eOverSampling2:   2倍过采样
- * @n - eOverSampling4:   4倍过采样
- * @n - eOverSampling8:   8倍过采样
- * @n - eOverSampling16:  16倍过采样
- * @n - eOverSampling32:  32倍过采样
- * @n - eOverSampling64:  64倍过采样
- * @n - eOverSampling128: 128倍过采样
- * @return 成功返回0，错误返回1
- */
-uint8_t setOSR(eOverSampling_t osrTemp, eOverSampling_t osrPress);
+  /**
+   * @fn configAccel
+   * @brief 配置加速度计
+   * @param odr 输出数据速率选择（参见：eAccelODR_t）
+   * @n 可用速率：
+   * @n - eAccelODR0_78125Hz:  0.78125 Hz
+   * @n - eAccelODR1_5625Hz:   1.5625 Hz
+   * @n - eAccelODR3_125Hz:    3.125 Hz
+   * @n - eAccelODR6_25Hz:     6.25 Hz
+   * @n - eAccelODR12_5Hz:     12.5 Hz
+   * @n - eAccelODR25Hz:       25 Hz
+   * @n - eAccelODR50Hz:       50 Hz
+   * @n - eAccelODR100Hz:      100 Hz
+   * @n - eAccelODR200Hz:      200 Hz
+   * @n - eAccelODR400Hz:      400 Hz
+   * @n - eAccelODR800Hz:      800 Hz
+   * @n - eAccelODR1600Hz:     1600 Hz
+   * @n - eAccelODR3200Hz:     3200 Hz
+   * @n - eAccelODR6400Hz:     6400 Hz
+   * @n @note ODR 范围限制（基于工作模式）：
+   * @n - 低功耗模式：0.78Hz ~ 400Hz
+   * @n - 普通模式：12.5Hz ~ 6400Hz
+   * @n - 高性能模式：12.5Hz ~ 6400Hz
+   * @param range 量程选择（参见：eAccelRange_t）
+   * @n 可用量程：
+   * @n - eAccelRange2G:   ±2g
+   * @n - eAccelRange4G:   ±4g
+   * @n - eAccelRange8G:   ±8g
+   * @n - eAccelRange16G:  ±16g
+   * @param mode 工作模式选择（参见：eAccelMode_t），默认为 eAccelModeNormal
+   * @n 可用模式：
+   * @n - eAccelModeLowPower:  低功耗模式
+   * @n - eAccelModeNormal:    普通模式（默认）
+   * @n - eAccelModeHighPerf:  高性能模式
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool configAccel(eAccelODR_t odr, eAccelRange_t range, eAccelMode_t mode = eAccelModeNormal);
 
-/**
- * @fn setMeasureMode
- * @brief 配置传感器电源/测量模式
- * @param mode 操作模式(见: eMeasureMode_t)
- * @n 可用模式:
- * @n - eSleep:         睡眠模式
- * @n - eNormal:        正常测量模式
- * @n - eSingleShot:    单次测量
- * @n - eContinuous:    连续测量
- * @n - eDeepSleep:     深度睡眠模式
- * @return 成功返回0，错误返回1
- */
-uint8_t setMeasureMode(eMeasureMode_t mode);
+  /**
+   * @fn configGyro
+   * @brief 配置陀螺仪
+   * @param odr 输出数据速率选择（参见：eGyroODR_t）
+   * @n 可用速率：
+   * @n - eGyroODR0_78125Hz: 0.78125 Hz
+   * @n - eGyroODR1_5625Hz:  1.5625 Hz
+   * @n - eGyroODR3_125Hz:   3.125 Hz
+   * @n - eGyroODR6_25Hz:    6.25 Hz
+   * @n - eGyroODR12_5Hz:    12.5 Hz
+   * @n - eGyroODR25Hz:      25 Hz
+   * @n - eGyroODR50Hz:      50 Hz
+   * @n - eGyroODR100Hz:     100 Hz
+   * @n - eGyroODR200Hz:     200 Hz
+   * @n - eGyroODR400Hz:     400 Hz
+   * @n - eGyroODR800Hz:     800 Hz
+   * @n - eGyroODR1600Hz:    1600 Hz
+   * @n - eGyroODR3200Hz:    3200 Hz
+   * @n - eGyroODR6400Hz:    6400 Hz
+   * @n @note ODR 范围限制（基于工作模式）：
+   * @n - 低功耗模式：0.78Hz ~ 400Hz
+   * @n - 普通模式：12.5Hz ~ 6400Hz
+   * @n - 高性能模式：12.5Hz ~ 6400Hz
+   * @param range 量程选择（参见：eGyroRange_t）
+   * @n 可用量程：
+   * @n - eGyroRange125DPS:   ±125dps
+   * @n - eGyroRange250DPS:   ±250dps
+   * @n - eGyroRange500DPS:   ±500dps
+   * @n - eGyroRange1000DPS:  ±1000dps
+   * @n - eGyroRange2000DPS:  ±2000dps
+   * @param mode 工作模式选择（参见：eGyroMode_t），默认为 eGyroModeNormal
+   * @n 可用模式：
+   * @n - eGyroModeLowPower:  低功耗模式
+   * @n - eGyroModeNormal:    普通模式（默认）
+   * @n - eGyroModeHighPerf:  高性能模式
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool configGyro(eGyroODR_t odr, eGyroRange_t range, eGyroMode_t mode = eGyroModeNormal);
 
-/**
- * @fn reset
- * @brief 执行传感器软件复位
- * @return 成功返回0，错误返回1
- */
-uint8_t reset(void);
+  /**
+   * @fn getAccelGyroData
+   * @brief 同时读取加速度计和陀螺仪数据并返回物理单位
+   * @details 一次性读取加速度计和陀螺仪原始数据，转换为 g/dps 并返回
+   * @param accel 加速度计输出
+   * @param gyro 陀螺仪输出
+   * @return bool 类型，表示读取状态
+   * @retval true 读取成功
+   * @retval false 读取失败
+   */
+  bool getAccelGyroData(sSensorData *accel, sSensorData *gyro);
 
-/**
- * @fn readTempC
- * @brief 读取校准后的温度数据
- * @return 温度值(摄氏度)
- */
-float readTempC(void);
+  /**
+   * @fn enableStepCounterInt
+   * @brief 使能计步器中断功能
+   * @details 配置计步器功能并映射到指定的中断引脚，当步数变化时将触发中断
+   * @param pin 绑定的中断引脚（eINT1 或 eINT2）
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableStepCounterInt(eInt_t pin);
 
-/**
- * @fn readPressPa
- * @brief 读取校准后的压力数据
- * @return 压力值(帕斯卡)
- */
-float readPressPa(void);
+  /**
+   * @fn readStepCounter
+   * @brief 读取计步器数据
+   * @param stepVal 步数输出指针，读取的步数将写入该指针指向的内存
+   * @return int8_t BMI3_OK 表示成功，其他值表示失败
+   */
+  int8_t readStepCounter(uint16_t *stepVal);
 
-/**
- * @fn readAltitudeM
- * @brief 根据压力读数计算海拔高度
- * @note 使用公式:
- * @n altitude = (1 - (P/101325)^0.190284) * 44307.7
- * @n 其中P = 当前压力值(Pa)
- * @return 海拔高度(米)
- */
-float readAltitudeM(void);
+  /**
+   * @fn getIntStatus
+   * @brief 获取中断状态
+   * @details 读取并合并 INT1 和 INT2 引脚的中断状态，返回值为 INT1 和 INT2 状态寄存器的 OR 组合。
+   * @return uint16_t 合并的中断状态寄存器值（INT1 | INT2）。每一位代表不同的中断类型：
+   * @n - BMI3_INT_STATUS_ANY_MOTION: 检测到任意运动
+   * @n - BMI3_INT_STATUS_NO_MOTION: 检测到无运动
+   * @n - BMI3_INT_STATUS_FLAT: 平面检测
+   * @n - BMI3_INT_STATUS_ORIENTATION: 方向变化
+   * @n - BMI3_INT_STATUS_STEP_DETECTOR: 检测到步数
+   * @n - BMI3_INT_STATUS_SIG_MOTION: 检测到显著运动
+   * @n - BMI3_INT_STATUS_TILT: 检测到倾斜
+   * @n - BMI3_INT_STATUS_TAP: 检测到敲击
+   */
+  uint16_t getIntStatus(void);
 
-/**
- * @fn configIIR
- * @brief 配置IIR滤波器系数
- * @param iirTemp  温度IIR滤波器(见: eIIRFilter_t)
- * @param iirPress 压力IIR滤波器(见: eIIRFilter_t)
- * @n 可用系数:
- * @n - eFilterBypass:   旁路滤波器
- * @n - eFilter1:        1阶滤波器
- * @n - eFilter3:        3阶滤波器
- * @n - eFilter7:        7阶滤波器
- * @n - eFilter15:       15阶滤波器
- * @n - eFilter31:       31阶滤波器
- * @n - eFilter63:       63阶滤波器
- * @n - eFilter127:      127阶滤波器
- * @return 成功返回0，错误返回1
- */
-uint8_t configIIR(eIIRFilter_t iirTemp, eIIRFilter_t iirPress);
+  /**
+   * @fn enableAnyMotionInt
+   * @brief 配置任意运动阈值中断（使用官方结构体参数）
+   * @param config 任意运动配置结构体（参见 bmi3_any_motion_config）
+   * @n 参数说明：
+   * @n - slope_thres: 加速度斜率阈值，范围
+   * 0-4095，单位 1.953mg/LSB（官方示例：9 ≈ 17.6mg）
+   * @n - hysteresis: 滞回值，范围 0-1023，单位 1.953mg/LSB（官方示例：5 ≈ 9.8mg）
+   * @n - duration: 持续时间，范围 0-8191，单位 20ms（官方示例：9 = 180ms）
+   * @n - acc_ref_up: 加速度参考更新模式，0=事件触发时，1=始终更新（官方示例：1）
+   * @n - wait_time: 等待时间，范围 0-7，单位 20ms（官方示例：4-5 = 80-100ms）
+   * @param pin 绑定的中断引脚
+   * @param axisMask 轴选择掩码（默认：eAxisXYZ）
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableAnyMotionInt(const struct bmi3_any_motion_config &config,
+                          eInt_t pin, uint8_t axisMask = eAxisXYZ);
 
-/**
- * @fn configFIFO
- * @brief 配置FIFO操作参数
- * @param dataSel 数据帧类型(见: eFIFODataSel_t)
- * @n 可用类型:
- * @n - eFIFODisable:           FIFO禁用
- * @n - eFIFOTempData:          仅温度数据
- * @n - eFIFOPressData:         仅压力数据
- * @n - eFIFOPressAndTempData:  压力和温度数据
- *
- * @param downSampling 下采样率(见: eFIFODownSampling_t)
- * @n 可用比率:
- * @n - eNoDownSampling:    无下采样
- * @n - eDownSampling2:     2倍下采样
- * @n - eDownSampling4:     4倍下采样
- * @n - eDownSampling8:     8倍下采样
- * @n - eDownSampling16:    16倍下采样
- * @n - eDownSampling32:    32倍下采样
- * @n - eDownSampling64:    64倍下采样
- * @n - eDownSampling128:   128倍下采样
- *
- * @param mode FIFO操作模式(见: eFIFOWorkMode_t)
- * @n 可用模式:
- * @n - eFIFOOverwriteMode:  连续数据流模式
- * @n - eFIFOFullStopMode:   FIFO满时停止
- *
- * @param threshold FIFO触发阈值(0=禁用, 1-31=帧数)
- * @n - 0x0F: 15帧。这是PT模式下的最大设置。最高有效位被忽略。
- * @n - 0x1F: 31帧。这是P或T模式下的最大设置。
- * @return 成功返回0，错误返回1
- */
-uint8_t configFIFO(eFIFODataSel_t dataSel, eFIFODownSampling_t downSampling, eFIFOWorkMode_t mode, uint8_t threshold);
+  /**
+   * @fn enableNoMotionInt
+   * @brief 配置无运动阈值中断（使用官方结构体参数）
+   * @param config 无运动检测配置结构体（参见 bmi3_no_motion_config）
+   * @n 参数说明：
+   * @n - slope_thres: 加速度斜率阈值，范围
+   * 0-4095，单位 1.953mg/LSB（官方示例：9 ≈ 17.6mg）
+   * @n - hysteresis: 滞回值，范围 0-1023，单位 1.953mg/LSB（官方示例：5 ≈ 9.8mg）
+   * @n - duration: 持续时间，范围 0-8191，单位 20ms（官方示例：9 = 180ms）
+   * @n - acc_ref_up: 加速度参考更新模式，0=事件触发时，1=始终更新（官方示例：1）
+   * @n - wait_time: 等待时间，范围 0-7，单位 20ms（官方示例：5 = 100ms）
+   * @param pin 绑定的中断引脚
+   * @param axisMask 轴选择掩码（默认：eAxisXYZ）
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableNoMotionInt(const struct bmi3_no_motion_config &config, eInt_t pin,
+                         uint8_t axisMask = eAxisXYZ);
 
-/**
- * @fn getFIFOCount
- * @brief 获取FIFO中当前的帧数
- * @return 存储的数据帧数(0-31)
- */
-uint8_t getFIFOCount(void);
+  /**
+   * @fn enableSigMotionInt
+   * @brief 配置显著运动检测中断（使用官方结构体参数）
+   * @param config 显著运动配置结构体（参见 bmi3_sig_motion_config）
+   * @n 参数说明：
+   * @n - block_size: 检测段大小，范围 0-65535（官方示例：200）
+   * @n - peak_2_peak_min: 峰峰值加速度最小值，范围 0-1023（官方示例：30）
+   * @n - peak_2_peak_max: 峰峰值加速度最大值，范围 0-1023（官方示例：30）
+   * @n - mcr_min: 每秒平均交叉率最小值，范围 0-62（官方示例：0x10 = 16）
+   * @n - mcr_max: 每秒平均交叉率最大值，范围 0-62（官方示例：0x10 = 16）
+   * @param pin 绑定的中断引脚
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableSigMotionInt(const struct bmi3_sig_motion_config &config,
+                          eInt_t pin);
 
-/**
- * @fn getFIFOData
- * @brief 从FIFO读取所有数据
- * @return sFIFOData_t 包含压力和温度数据的结构体
- * @n - len: 存储的数据帧数(0-31)
- * @n - pressure: 压力值数组
- * @n - temperature: 温度值数组
- */
-sFIFOData_t getFIFOData(void);
+  /**
+   * @fn enableFlatInt
+   * @brief 配置平面检测中断（使用官方结构体参数）
+   * @param config 平面检测配置结构体（参见 bmi3_flat_config）
+   * @n 参数说明：
+   * @n - theta: 最大允许倾斜角，范围 0-63，角度计算公式为 64 *
+   * (tan(angle)^2)（官方示例：9）
+   * @n - blocking: 阻塞模式，0=MODE_0(禁用)，1=MODE_1(>1.5g)，
+   * 2=MODE_2(>1.5g 或斜率>半阈值)，3=MODE_3(>1.5g 或斜率>阈值)（官方示例：3）
+   * @n - hold_time: 设备保持平面状态的最小持续时间，范围 0-255，单位 20ms（官方示例：50 = 1000ms）
+   * @n - hysteresis: 平面检测的滞回角度，范围 0-255（官方示例：9）
+   * @n - slope_thres: 连续加速度样本之间的最小斜率，范围 0-255（官方示例：0xCD = 205）
+   * @param pin 绑定的中断引脚
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableFlatInt(const struct bmi3_flat_config &config, eInt_t pin);
 
-/**
- * @fn configInterrupt
- * @brief 配置中断行为
- * @param intMode 触发模式(见: eIntMode_t)
- * @n 可用模式:
- * @n - eIntModePulsed: 脉冲模式
- * @n - eIntModeLatched: 锁存模式
- *
- * @param intPol 信号极性(见: eIntPolarity_t)
- * @n 可用极性:
- * @n - eIntLowActive:  低电平有效
- * @n - eIntHighActive: 高电平有效
- *
- * @param intOd 输出驱动类型(见: eIntOutputMode_t)
- * @n 可用类型:
- * @n - eIntPushPull: 推挽输出
- * @n - eIntOpenDrain: 开漏输出
- *
- * @return 成功返回0，错误返回1
- */
-uint8_t configInterrupt(eIntMode_t mode, eIntPolarity_t pol, eIntOutputMode_t outputMode);
+  /**
+   * @fn enableOrientationInt
+   * @brief 配置方向检测中断（使用官方结构体参数）
+   * @param config 方向检测配置结构体（参见 bmi3_orientation_config）
+   * @n 参数说明：
+   * @n - ud_en: 是否检测翻转（正反面），0=禁用，1=使能（官方示例：1）
+   * @n - hold_time: 方向变化检测所需的持续时间，范围 0-255，单位 20ms（官方示例：4 = 80ms）
+   * @n - hysteresis: 方向检测的滞回值，范围 0-255（官方示例：5）
+   * @n - theta: 最大允许倾斜角，范围 0-63，角度=64*(tan(angle)^2)（官方示例：16）
+   * @n - mode: 方向检测模式，0/3=对称，1=高不对称，2=低不对称（官方示例：1）
+   * @n - slope_thres: 防止剧烈运动导致误检测的斜率阈值，范围 0-255（官方示例：30）
+   * @n - blocking: 阻塞模式，0-3（官方示例：3）
+   * @param pin 绑定的中断引脚
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableOrientationInt(const struct bmi3_orientation_config &config,
+                            eInt_t pin);
 
-/**
- * @fn setIntSource
- * @brief 启用特定的中断源
- * @param source 触发位掩码(见: eIntSource_t)
- * @n 可用源:
- * @n - eIntDataReady:    数据就绪中断
- * @n - eIntFIFOFull:    FIFO满中断
- * @n - eIntFIFOThres:   FIFO阈值中断
- * @n - eIntPressureOOR: 压力超出范围中断
- * @details 可以使用按位或(|)组合多个中断源。
- *          示例: 同时启用数据就绪和FIFO满中断:
- *          @code
- *          setIntSource(bmp58x.eIntDataReady | bmp58x.eIntFIFOFull);
- *          @endcode
- * @return 成功返回0，错误返回1
- */
-uint8_t setIntSource(uint8_t source);
+  /**
+   * @fn readOrientation
+   * @brief 读取方向检测输出
+   * @param portraitLandscape 横竖屏状态输出指针，可为 NULL
+   * @param faceUpDown 正反面状态输出指针，可为 NULL
+   * @return bool 类型，表示读取状态
+   * @retval true 读取成功
+   * @retval false 读取失败或功能未使能
+   */
+  bool readOrientation(uint8_t *portraitLandscape, uint8_t *faceUpDown);
 
-/**
- * @fn getIntStatus
- * @brief 读取当前中断状态标志
- * @return uint16_t 活动中断的位掩码
- * @n 可能的标志:
- * @n - eIntStatusDataReady: 数据就绪(0x01)
- * @n - eIntStatusFIFOFull: FIFO已满 (0x02)
- * @n - eIntStatusFIFOThres: FIFO达到阈值(0x04)
- * @n - eIntStatusPressureOOR: 压力超出范围(0x08)
- * @n - eIntStatusResetComplete: 复位完成(0x10)
- */
-uint16_t getIntStatus(void);
+  /**
+   * @fn enableTapInt
+   * @brief 配置敲击检测中断（使用官方结构体参数）
+   * @param config 敲击检测配置结构体（参见 bmi3_tap_detector_config）
+   * @n 关键参数（参考 tap.c）：
+   * @n - axis_sel: 选择敲击检测的轴（0=X，1=Y，2=Z）
+   * @n - mode: 检测模式（0=敏感，1=普通，2=稳健）
+   * @n - tap_peak_thres / tap_shock_settling_dur 等用于确定敲击的时序/幅度阈值
+   * @param pin 绑定的中断引脚
+   * @param enableSingle 是否使能单击检测（默认 true）
+   * @param enableDouble 是否使能双击检测（默认 true）
+   * @param enableTriple 是否使能三击检测（默认 true）
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableTapInt(const struct bmi3_tap_detector_config &config, eInt_t pin,
+                    bool enableSingle = true, bool enableDouble = true,
+                    bool enableTriple = true);
 
-/**
- * @fn setPressOOR
- * @brief 配置压力超出范围检测
- * @param oor 阈值压力值(0x00000-0x1FFFF)
- * @param range 迟滞范围(0-255)
- * @n oor - range < 压力 < oor + range
- * @param cntLimit 触发持续计数
- * @n 可用持续设置:
- * @n - eOORCountLimit1:  1次计数
- * @n - eOORCountLimit3:  3次计数
- * @n - eOORCountLimit7:  7次计数
- * @n - eOORCountLimit15: 15次计数
- * @return 成功返回0，错误返回1
- */
-uint8_t setPressOOR(uint32_t oor, uint8_t range, eOORCountLimit_t cntLimit);
+  /**
+   * @fn readTapStatus
+   * @brief 读取敲击检测状态（单击/双击/三击）
+   * @param tapMask 输出掩码（可组合 BMI3_TAP_DET_STATUS_SINGLE/DOUBLE/TRIPLE）
+   * @return bool 类型，表示读取状态
+   * @retval true 读取成功
+   * @retval false 读取失败
+   */
+  bool readTapStatus(uint8_t *tapMask);
 
-/**
- * @fn calibratedAbsoluteDifference
- * @brief 使用给定的当前海拔高度作为参考值，消除后续压力和海拔数据的绝对差值
- * @param altitude 当前海拔高度
- * @return 布尔值，表示参考值是否设置成功
- * @retval True 表示参考值设置成功
- * @retval False 表示设置参考值失败
- */
-bool calibratedAbsoluteDifference(float altitude);
-
-/**
- * @fn setBaud
- * @brief 设置UART通信波特率
- * @details 使用指定的波特率枚举值配置串行通信速度。
- *          该函数初始化必要的硬件寄存器以实现所需的数据传输速率。
- * @param baud eBaud枚举值，指定所需的波特率。
- *             如果未显式设置，默认为e9600。
- * @note 实际硬件配置可能因微控制器型号而异。
- *       该函数假设使用标准时钟频率；如果使用非默认系统时钟配置，请调整时钟设置。
- * @warning 在通信过程中更改波特率可能导致数据丢失或通信错误（如果两个设备未同步）。
- * @see eBaud可用的波特率选项：
- *      - e2400: 2400比特/秒
- *      - e4800: 4800比特/秒  
- *      - e9600: 9600比特/秒（默认值）
- *      - e14400: 14400比特/秒
- *      - e19200: 19200比特/秒
- *      - e38400: 38400比特/秒
- *      - e57600: 57600比特/秒
- *      - e115200: 115200比特/秒
- */
-void setBaud(eBaud baud);
-
+  /**
+   * @fn enableTiltInt
+   * @brief 配置倾斜检测中断（使用官方结构体参数）
+   * @param config 倾斜检测配置结构体（参见 bmi3_tilt_config）
+   * @n 关键参数（参考 tilt.c）：
+   * @n - segment_size: 用于平均参考向量的时间窗口，范围 0-255
+   * @n - min_tilt_angle: 需要超过的最小倾斜角，范围 0-255，角度=256*cos(angle)
+   * @n - beta_acc_mean: 低通平均系数，范围 0-65535
+   * @param pin 绑定的中断引脚
+   * @return bool 类型，表示配置状态
+   * @retval true 配置成功
+   * @retval false 配置失败
+   */
+  bool enableTiltInt(const struct bmi3_tilt_config &config, eInt_t pin);
 ```
 
 ## 兼容性
 
 | MCU                | 运行良好 | 运行异常 | 未测试 | 备注 |
-| ------------------ |:---------:|:----------:|:--------:| ------- |
-| Arduino uno        |     √     |            |          |         |
-| FireBeetle esp32   |     √     |            |          |         |
-| FireBeetle esp8266 |     √     |            |          |         |
-| FireBeetle m0      |     √     |            |          |         |
-| Leonardo           |     √     |            |          |         |
-| Microbit           |     √     |            |          |         |
-| Arduino MEGA2560   |     √     |            |          |         |
+| ------------------ | :-----: | :------: | :----: | ---- |
+| Arduino uno        |    √    |          |        |      |
+| FireBeetle esp32   |    √    |          |        |      |
+| FireBeetle esp8266 |    √    |          |        |      |
+| FireBeetle m0      |    √    |          |        |      |
+| Leonardo           |    √    |          |        |      |
+| Microbit           |    √    |          |        |      |
+| Arduino MEGA2560   |    √    |          |        |      |
 
 ## 历史
 
-- Data 2025-09-22
+- Date 2025-09-22
 - Version V1.0.0
 
 ## 创作者
 
-Written by(yuanlong.yu@dfrobot.com), 2025. (Welcome to our [website](https://www.dfrobot.com/))
+Written by(Martin@dfrobot.com), 2025. (Welcome to our [website](https://www.dfrobot.com/))

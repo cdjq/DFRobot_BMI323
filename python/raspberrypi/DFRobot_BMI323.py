@@ -1,1119 +1,2027 @@
-# -*- coding: utf-8 -*
 '''!
-  @file  DFRobot_BMP58X.py
-  @brief  Define the infrastructure of DFRobot_BMP58X class
-  @n      This is a pressure and temperature sensor that can be controlled through I2C/SPI/UART ports.
-  @n      BMP (581/585) has functions such as temperature compensation, data oversampling, IIR filtering, etc
-  @n      These features improve the accuracy of data collected by BMP (581/585) sensors.
-  @n      BMP (581/585) also has a FIFO data buffer, greatly improving its availability.
-  @n      Similarly, BMP (581/585) has an interrupt pin that can be used in an energy-efficient manner without using software algorithms.
-  @copyright   Copyright (c) 2025 DFRobot Co.Ltd (http://www.dfrobot.com)
-  @license     The MIT License (MIT)
-  @author      yuanlong.yu(yuanlong.yu@dfrobot.com)
-  @version     V1.0.0
-  @date        2025-06-06
-  @url         https://github.com/DFRobot/DFRobot_BMP58X
+@file DFRobot_BMI323.py
+@brief Defines core structures and basic methods for DFRobot_BMI323.
+@details BMI323 is a 6-axis IMU (accelerometer + gyroscope) controllable over I2C.
+@n It supports motion features such as step counter, any-motion, no-motion, tap, etc.
+@n These features suit wearables, smart devices, and other motion-aware applications.
+@n BMI323 exposes interrupt pins to enable low-power use without heavy host processing.
+@copyright Copyright (c) 2025 DFRobot Co.Ltd (http://www.dfrobot.com)
+@license The MIT License (MIT)
+@author [Martin](Martin@dfrobot.com)
+@version V1.0.0
+@date 2025-12-08
+@url https://github.com/DFRobot/DFRobot_BMI323
 '''
-  
-import struct
-from ctypes import *
-from DFRobot_RTU import *
-import sys
-import time
 
+import sys
 import smbus
-import spidev
-import RPi.GPIO as GPIO
-
 import logging
+import time
 from ctypes import *
-
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-
 
 logger = logging.getLogger()
-# logger.setLevel(logging.INFO)   # Display all print information
-# If you don’t want to display too many prints, only print errors, please use this option
-logger.setLevel(logging.FATAL)
+logger.setLevel(logging.INFO)  # show all log output
+# logger.setLevel(logging.FATAL)  # enable only fatal logs if noise is an issue
 ph = logging.StreamHandler()
-formatter = logging.Formatter(
-    "%(asctime)s - [%(filename)s %(funcName)s]:%(lineno)d - %(levelname)s: %(message)s")
+formatter = logging.Formatter("%(asctime)s - [%(filename)s %(funcName)s]:%(lineno)d - %(levelname)s: %(message)s")
 ph.setFormatter(formatter)
 logger.addHandler(ph)
 
+## Default chip I2C address
+DFRobot_BMI323_IIC_ADDR = 0x69
+## Chip ID
+DFRobot_BMI323_CHIP_ID = 0x43
 
-class DFRobot_BMP58X(object):
-    # Register address definitions
-    REG_DATA_LEN_MAX = 0x04                     # Maximum data length
-    REG_I_CHIP_ID = 0x01                        # Chip ID register
-    REG_I_REV_ID = 0x02                         # Revision ID register
-    REG_I_CHIP_STATUS = 0x11                    # Chip status register
-    REG_H_DRIVE_CONFIG = 0x13                   # Drive configuration register
-    REG_H_INT_CONFIG = 0x14                     # Interrupt configuration register
-    REG_H_INT_SOURCE = 0x15                     # Interrupt source selection register
-    REG_H_FIFO_CONFIG = 0x16                    # FIFO configuration register
-    REG_I_FIFO_COUNT = 0x17                     # FIFO count register
-    REG_H_FIFO_SEL = 0x18                       # FIFO selection register
-    REG_I_TEMP_DATA_XLSB = 0x1D                 # Temperature data XLSB register
-    REG_I_TEMP_DATA_LSB = 0x1E                  # Temperature data LSB register
-    REG_I_TEMP_DATA_MSB = 0x1F                  # Temperature data MSB register
-    REG_I_PRESS_DATA_XLSB = 0x20                # Pressure data XLSB register
-    REG_I_PRESS_DATA_LSB = 0x21                 # Pressure data LSB register
-    REG_I_PRESS_DATA_MSB = 0x22                 # Pressure data MSB register
-    REG_I_INT_STATUS = 0x27                     # Interrupt status register
-    REG_I_STATUS = 0x28                         # Status register
-    REG_I_FIFO_DATA = 0x29                      # FIFO data register
-    REG_H_NVM_ADDR = 0x2B                       # NVM address register
-    REG_H_NVM_DATA_LSB = 0x2C                   # NVM data LSB register
-    REG_H_NVM_DATA_MSB = 0x2D                   # NVM data MSB register
-    REG_H_DSP_CONFIG = 0x30                     # DSP configuration register
-    REG_H_DSP_IIR = 0x31                        # DSP IIR configuration register
-    REG_H_OOR_THR_P_LSB = 0x32                  # Out-of-range pressure threshold LSB register
-    REG_H_OOR_THR_P_MSB = 0x33                  # Out-of-range pressure threshold MSB register
-    REG_H_OOR_RANGE = 0x34                      # Out-of-range pressure range register
-    REG_H_OOR_CONFIG = 0x35                     # Out-of-range configuration register
-    REG_H_OSR_CONFIG = 0x36                     # Oversampling configuration register
-    REG_H_ODR_CONFIG = 0x37                     # Output data rate configuration register
-    REG_I_OSR_EFF = 0x38                        # Effective oversampling register
-    REG_H_CMD = 0x7E                            # Command register
+## Error codes
+ERR_OK = 0  ## no error
+ERR_DATA_BUS = -1  ## data bus error
+ERR_IC_VERSION = -2  ## chip version mismatch
 
-    REG_I_MODBUS_PID = 0x00                     # Modbus PID register
-    REG_I_MODBUS_VID = 0x01                     # Modbus VID register
-    REG_H_MODBUS_BAUD = 0x01                    # Modbus baud rate register
-    OFFSET_REG = 0x0006                         # Register offset
+## Register map (from bmi3_defs.h)
+BMI3_REG_CHIP_ID = 0x00
+BMI3_REG_ERR_REG = 0x01
+BMI3_REG_STATUS = 0x02
+BMI3_REG_ACC_DATA_X = 0x03
+BMI3_REG_ACC_DATA_Y = 0x04
+BMI3_REG_ACC_DATA_Z = 0x05
+BMI3_REG_GYR_DATA_X = 0x06
+BMI3_REG_GYR_DATA_Y = 0x07
+BMI3_REG_GYR_DATA_Z = 0x08
+BMI3_REG_TEMP_DATA = 0x09
+BMI3_REG_CMD = 0x7E
+BMI3_REG_FEATURE_IO0 = 0x10
+BMI3_REG_FEATURE_IO1 = 0x11
+BMI3_REG_FEATURE_IO2 = 0x12
+BMI3_REG_FEATURE_IO3 = 0x13
+BMI3_REG_FEATURE_IO_STATUS = 0x14
+BMI3_REG_ACC_CONF = 0x20
+BMI3_REG_GYR_CONF = 0x21
+BMI3_REG_IO_INT_CTRL = 0x38
+BMI3_REG_INT_CONF = 0x39
+BMI3_REG_INT_MAP1 = 0x3A
+BMI3_REG_INT_MAP2 = 0x3B
+BMI3_REG_INT_STATUS_INT1 = 0x0D
+BMI3_REG_INT_STATUS_INT2 = 0x0E
+BMI3_REG_FEATURE_CTRL = 0x40
+BMI3_REG_FEATURE_DATA_ADDR = 0x41
+BMI3_REG_FEATURE_DATA_TX = 0x42
+BMI3_REG_FEATURE_DATA_STATUS = 0x43
+BMI3_REG_FEATURE_EVENT_EXT = 0x47
 
-    BMP581_CHIP_ID = 0x50                       # BMP581 chip ID
-    BMP585_CHIP_ID = 0x51                       # BMP585 chip ID
+## Interface types
+BMI3_I2C_INTF = 1
+BMI3_SPI_INTF = 2
 
-    # /*! @name Soft reset command */
-    SOFT_RESET_CMD = 0xB6                       # Soft reset command
+## Dummy-byte count (I2C needs 2 bytes, SPI needs 1 byte)
+BMI3_I2C_DUMMY_BYTE = 2
 
-    # /** Bit position and width macro definitions */
-    # // REG_INT_CONFIG (0x14)
-    INT_MODE_POS = 0                            # Interrupt mode position
-    INT_MODE_WIDTH = 1                          # Interrupt mode width
-    INT_POL_POS = 1                             # Interrupt polarity position
-    INT_POL_WIDTH = 1                           # Interrupt polarity width
-    INT_OD_POS = 2                              # Interrupt open-drain position
-    INT_OD_WIDTH = 1                            # Interrupt open-drain width
-    INT_EN_POS = 3                              # Interrupt enable position
-    INT_EN_WIDTH = 1                            # Interrupt enable width
-    PAD_INT_DRV_POS = 4                         # PAD interrupt drive position
-    PAD_INT_DRV_WIDTH = 4                       # PAD interrupt drive width
+## Return codes
+BMI323_OK = 0
+BMI323_E_NULL_PTR = -1
+BMI323_E_COM_FAIL = -2
+BMI323_E_DEV_NOT_FOUND = -3
+BMI323_E_FEATURE_ENGINE_STATUS = -4
 
-    # // REG_INT_SRC_SEL (0x15)
-    DRDY_DATA_REG_EN_POS = 0                    # Data ready register enable position
-    DRDY_DATA_REG_EN_WIDTH = 1                  # Data ready register enable width
-    FIFO_FULL_EN_POS = 1                        # FIFO full enable position
-    FIFO_FULL_EN_WIDTH = 1                      # FIFO full enable width
-    FIFO_THS_EN_POS = 2                         # FIFO threshold enable position
-    FIFO_THS_EN_WIDTH = 1                       # FIFO threshold enable width
-    OOR_P_EN_POS = 3                            # Out-of-range pressure enable position
-    OOR_P_EN_WIDTH = 1                          # Out-of-range pressure enable width
+## Command definitions
+BMI3_CMD_SOFT_RESET = 0xDEAF  # soft-reset command (16-bit: low 0xAF, high 0xDE)
+BMI3_SOFT_RESET_DELAY_US = 1500  # soft-reset delay in microseconds
 
-    # // REG_FIFO_CONFIG (0x16)
-    FIFO_THRESHOLD_POS = 0                      # FIFO threshold position
-    FIFO_THRESHOLD_WIDTH = 5                    # FIFO threshold width
-    FIFO_MODE_POS = 5                           # FIFO mode position
-    FIFO_MODE_WIDTH = 1                         # FIFO mode width
+## Masks
+BMI3_REV_ID_MASK = 0xF0
+BMI3_REV_ID_POS = 4
+BMI3_FEATURE_ENGINE_ENABLE_MASK = 0x0001
+BMI3_CHIP_ID_MASK = 0x00FF
 
-    # // REG_FIFO_COUNT (0x17)
-    FIFO_COUNT_POS = 0                          # FIFO count position
-    FIFO_COUNT_WIDTH = 6                        # FIFO count width
+## Accelerometer config bitfields
+BMI3_ACC_ODR_MASK = 0x000F
+BMI3_ACC_RANGE_MASK = 0x0070
+BMI3_ACC_RANGE_POS = 4
+BMI3_ACC_BW_MASK = 0x0080
+BMI3_ACC_BW_POS = 7
+BMI3_ACC_AVG_NUM_MASK = 0x0700
+BMI3_ACC_AVG_NUM_POS = 8
+BMI3_ACC_MODE_MASK = 0x7000
+BMI3_ACC_MODE_POS = 12
 
-    # // REG_FIFO_SEL_CONFIG (0x18)
-    FIFO_FRAME_SEL_POS = 0                      # FIFO frame selection position
-    FIFO_FRAME_SEL_WIDTH = 2                    # FIFO frame selection width
-    FIFO_DEC_SEL_POS = 2                        # FIFO decimation selection position
-    FIFO_DEC_SEL_WIDTH = 3                      # FIFO decimation selection width
+## Gyroscope config bitfields
+BMI3_GYR_ODR_MASK = 0x000F
+BMI3_GYR_RANGE_MASK = 0x0070
+BMI3_GYR_RANGE_POS = 4
+BMI3_GYR_BW_MASK = 0x0080
+BMI3_GYR_BW_POS = 7
+BMI3_GYR_AVG_NUM_MASK = 0x0700
+BMI3_GYR_AVG_NUM_POS = 8
+BMI3_GYR_MODE_MASK = 0x7000
+BMI3_GYR_MODE_POS = 12
 
-    # // REG_NVM_ADDRESS (0x2B)
-    NVM_ROW_ADDRESS_POS = 0                     # NVM row address position
-    NVM_ROW_ADDRESS_WIDTH = 6                   # NVM row address width
-    NVM_PROG_EN_POS = 6                         # NVM programming enable position
-    NVM_PROG_EN_WIDTH = 1                       # NVM programming enable width
+## Accelerometer mode constants
+BMI3_ACC_MODE_LOW_PWR = 0x03
+BMI3_ACC_MODE_NORMAL = 0x04
+BMI3_ACC_MODE_HIGH_PERF = 0x07
 
-    # // REG_DSP_CONFIG (0x30)
-    IIR_FLUSH_FORCED_EN_POS = 2                 # IIR forced flush enable position
-    IIR_FLUSH_FORCED_EN_WIDTH = 1               # IIR forced flush enable width
-    SHDW_SEL_IIR_T_POS = 3                      # Temperature IIR shadow selection position
-    SHDW_SEL_IIR_T_WIDTH = 1                    # Temperature IIR shadow selection width
-    FIFO_SEL_IIR_T_POS = 4                      # Temperature IIR FIFO selection position
-    FIFO_SEL_IIR_T_WIDTH = 1                    # Temperature IIR FIFO selection width
-    SHDW_SEL_IIR_P_POS = 5                      # Pressure IIR shadow selection position
-    SHDW_SEL_IIR_P_WIDTH = 1                    # Pressure IIR shadow selection width
-    FIFO_SEL_IIR_P_POS = 6                      # Pressure IIR FIFO selection position
-    FIFO_SEL_IIR_P_WIDTH = 1                    # Pressure IIR FIFO selection width
-    OOR_SEL_IIR_P_POS = 7                       # Out-of-range pressure IIR selection position
-    OOR_SEL_IIR_P_WIDTH = 1                     # Out-of-range pressure IIR selection width
+## Gyroscope mode constants
+BMI3_GYR_MODE_LOW_PWR = 0x03
+BMI3_GYR_MODE_NORMAL = 0x04
+BMI3_GYR_MODE_HIGH_PERF = 0x07
 
-    # // REG_DSP_IIR_CONFIG (0x31)
-    SET_IIR_T_POS = 0                           # Temperature IIR setting position
-    SET_IIR_T_WIDTH = 3                         # Temperature IIR setting width
-    SET_IIR_P_POS = 3                           # Pressure IIR setting position
-    SET_IIR_P_WIDTH = 3                         # Pressure IIR setting width
+## Bandwidth definitions
+BMI3_ACC_BW_ODR_HALF = 0
+BMI3_ACC_BW_ODR_QUARTER = 1
+BMI3_GYR_BW_ODR_HALF = 0
+BMI3_GYR_BW_ODR_QUARTER = 1
 
-    # // REG_OOR_CONFIG (0x35)
-    OOR_THR_P_16_POS = 0                        # Out-of-range pressure threshold 16-bit position
-    OOR_THR_P_16_WIDTH = 1                      # Out-of-range pressure threshold 16-bit width
-    CNT_LIM_POS = 6                             # Count limit position
-    CNT_LIM_WIDTH = 2                           # Count limit width
+## Averaging definitions
+BMI3_ACC_AVG1 = 0x00
+BMI3_ACC_AVG2 = 0x01
+BMI3_GYR_AVG1 = 0x00
+BMI3_GYR_AVG2 = 0x01
 
-    # // REG_OSR_CONFIG (0x36)
-    OSR_T_POS = 0                               # Temperature oversampling position
-    OSR_T_WIDTH = 3                             # Temperature oversampling width
-    OSR_P_POS = 3                               # Pressure oversampling position
-    OSR_P_WIDTH = 3                             # Pressure oversampling width
-    PRESS_EN_POS = 6                            # Pressure enable position
-    PRESS_EN_WIDTH = 1                          # Pressure enable width
+## Data read length
+BMI3_READ_REG_DATA_LEN = 26
 
-    # // REG_ODR_CONFIG (0x37)
-    PWR_MODE_POS = 0                            # Power mode position
-    PWR_MODE_WIDTH = 2                          # Power mode width
-    ODR_POS = 2                                 # Output data rate position
-    ODR_WIDTH = 5                               # Output data rate width
-    DEEP_DIS_POS = 7                            # Deep sleep disable position
-    DEEP_DIS_WIDTH = 1                          # Deep sleep disable width
+## Feature Engine base addresses
+BMI3_BASE_ADDR_ANY_MOTION = 0x05
+BMI3_BASE_ADDR_NO_MOTION = 0x08
+BMI3_BASE_ADDR_SIG_MOTION = 0x0D
+BMI3_BASE_ADDR_FLAT = 0x0B
+BMI3_BASE_ADDR_ORIENT = 0x1C
+BMI3_BASE_ADDR_TAP = 0x1E
+BMI3_BASE_ADDR_TILT = 0x21
 
-    # // REG_EFF_OSR_CONFIG (0x38)
-    OSR_T_EFF_POS = 0                           # Effective temperature oversampling position
-    OSR_T_EFF_WIDTH = 3                         # Effective temperature oversampling width
-    OSR_P_EFF_POS = 3                           # Effective pressure oversampling position
-    OSR_P_EFF_WIDTH = 3                         # Effective pressure oversampling width
-    ODR_IS_VALID_POS = 7                        # ODR validity position
-    ODR_IS_VALID_WIDTH = 1                      # ODR validity width
+## Any/No-motion bitfields
+BMI3_ANY_NO_SLOPE_THRESHOLD_MASK = 0x0FFF
+BMI3_ANY_NO_ACC_REF_UP_MASK = 0x1000
+BMI3_ANY_NO_ACC_REF_UP_POS = 12
+BMI3_ANY_NO_HYSTERESIS_MASK = 0x03FF
+BMI3_ANY_NO_DURATION_MASK = 0x1FFF
+BMI3_ANY_NO_WAIT_TIME_MASK = 0xE000
+BMI3_ANY_NO_WAIT_TIME_POS = 13
 
-    STANDARD_SEA_LEVEL_PRESSURE_PA = 101325     # Standard sea level pressure, unit: Pa
+## Feature enable bitfields
+BMI3_ANY_MOTION_X_EN_MASK = 0x0008
+BMI3_ANY_MOTION_X_EN_POS = 3
+BMI3_ANY_MOTION_Y_EN_MASK = 0x0010
+BMI3_ANY_MOTION_Y_EN_POS = 4
+BMI3_ANY_MOTION_Z_EN_MASK = 0x0020
+BMI3_ANY_MOTION_Z_EN_POS = 5
+BMI3_NO_MOTION_X_EN_MASK = 0x0001
+BMI3_NO_MOTION_X_EN_POS = 0
+BMI3_NO_MOTION_Y_EN_MASK = 0x0002
+BMI3_NO_MOTION_Y_EN_POS = 1
+BMI3_NO_MOTION_Z_EN_MASK = 0x0004
+BMI3_NO_MOTION_Z_EN_POS = 2
+BMI3_STEP_DETECTOR_EN_MASK = 0x0100
+BMI3_STEP_DETECTOR_EN_POS = 8
+BMI3_STEP_COUNTER_EN_MASK = 0x0200
+BMI3_STEP_COUNTER_EN_POS = 9
+BMI3_SIG_MOTION_EN_MASK = 0x0400
+BMI3_SIG_MOTION_EN_POS = 10
+BMI3_FLAT_EN_MASK = 0x0040
+BMI3_FLAT_EN_POS = 6
+BMI3_ORIENTATION_EN_MASK = 0x0080
+BMI3_ORIENTATION_EN_POS = 7
+BMI3_TILT_EN_MASK = 0x0800
+BMI3_TILT_EN_POS = 11
+BMI3_TAP_DETECTOR_S_TAP_EN_MASK = 0x1000
+BMI3_TAP_DETECTOR_S_TAP_EN_POS = 12
+BMI3_TAP_DETECTOR_D_TAP_EN_MASK = 0x2000
+BMI3_TAP_DETECTOR_D_TAP_EN_POS = 13
+BMI3_TAP_DETECTOR_T_TAP_EN_MASK = 0x4000
+BMI3_TAP_DETECTOR_T_TAP_EN_POS = 14
 
-    # Constant definitions
-    DISABLE = 0                                 # Disable
-    ENABLE = 1                                  # Enable
+## Significant-motion bitfields
+BMI3_SIG_BLOCK_SIZE_MASK = 0xFFFF
+BMI3_SIG_P2P_MIN_MASK = 0x03FF
+BMI3_SIG_MCR_MIN_MASK = 0xFC00
+BMI3_SIG_MCR_MIN_POS = 10
+BMI3_SIG_P2P_MAX_MASK = 0x03FF
+BMI3_MCR_MAX_MASK = 0xFC00
+BMI3_MCR_MAX_POS = 10
 
-    DEEP_ENABLE = 0                             # Deep sleep enable
-    DEEP_DISABLE = 1                            # Deep sleep disable
+## Interrupt mapping bitfields
+BMI3_ANY_MOTION_OUT_MASK = 0x000C
+BMI3_ANY_MOTION_OUT_POS = 2
+BMI3_NO_MOTION_OUT_MASK = 0x0003
+BMI3_NO_MOTION_OUT_POS = 0
+BMI3_STEP_DETECTOR_OUT_MASK = 0x0300
+BMI3_STEP_DETECTOR_OUT_POS = 8
+BMI3_STEP_COUNTER_OUT_MASK = 0x0C00
+BMI3_STEP_COUNTER_OUT_POS = 10
+BMI3_SIG_MOTION_OUT_MASK = 0x3000
+BMI3_SIG_MOTION_OUT_POS = 12
+BMI3_FLAT_OUT_MASK = 0x0030
+BMI3_FLAT_OUT_POS = 4
+BMI3_ORIENTATION_OUT_MASK = 0x00C0
+BMI3_ORIENTATION_OUT_POS = 6
+BMI3_TAP_OUT_MASK = 0x0003
+BMI3_TAP_OUT_POS = 0
+BMI3_TILT_OUT_MASK = 0xC000
+BMI3_TILT_OUT_POS = 14
 
-    # Output data rate options
-    ODR_240_HZ = 0x00                           # 240 Hz
-    ODR_218_5_HZ = 0x01                         # 218.5 Hz
-    ODR_199_1_HZ = 0x02                         # 199.1 Hz
-    ODR_179_2_HZ = 0x03                         # 179.2 Hz
-    ODR_160_HZ = 0x04                           # 160 Hz
-    ODR_149_3_HZ = 0x05                         # 149.3 Hz
-    ODR_140_HZ = 0x06                           # 140 Hz
-    ODR_129_8_HZ = 0x07                         # 129.8 Hz
-    ODR_120_HZ = 0x08                           # 120 Hz
-    ODR_110_1_HZ = 0x09                         # 110.1 Hz
-    ODR_100_2_HZ = 0x0A                         # 100.2 Hz
-    ODR_89_6_HZ = 0x0B                          # 89.6 Hz
-    ODR_80_HZ = 0x0C                            # 80 Hz
-    ODR_70_HZ = 0x0D                            # 70 Hz
-    ODR_60_HZ = 0x0E                            # 60 Hz
-    ODR_50_HZ = 0x0F                            # 50 Hz
-    ODR_45_HZ = 0x10                            # 45 Hz
-    ODR_40_HZ = 0x11                            # 40 Hz
-    ODR_35_HZ = 0x12                            # 35 Hz
-    ODR_30_HZ = 0x13                            # 30 Hz
-    ODR_25_HZ = 0x14                            # 25 Hz
-    ODR_20_HZ = 0x15                            # 20 Hz
-    ODR_15_HZ = 0x16                            # 15 Hz
-    ODR_10_HZ = 0x17                            # 10 Hz
-    ODR_05_HZ = 0x18                            # 5 Hz
-    ODR_04_HZ = 0x19                            # 4 Hz
-    ODR_03_HZ = 0x1A                            # 3 Hz
-    ODR_02_HZ = 0x1B                            # 2 Hz
-    ODR_01_HZ = 0x1C                            # 1 Hz
-    ODR_0_5_HZ = 0x1D                           # 0.5 Hz
-    ODR_0_250_HZ = 0x1E                         # 0.250 Hz
-    ODR_0_125_HZ = 0x1F                         # 0.125 Hz
+## Interrupt pin config bitfields
+BMI3_INT1_LVL_MASK = 0x0001
+BMI3_INT1_OD_MASK = 0x0002
+BMI3_INT1_OD_POS = 1
+BMI3_INT1_OUTPUT_EN_MASK = 0x0004
+BMI3_INT1_OUTPUT_EN_POS = 2
+BMI3_INT2_LVL_MASK = 0x0100
+BMI3_INT2_LVL_POS = 8
+BMI3_INT2_OD_MASK = 0x0200
+BMI3_INT2_OD_POS = 9
+BMI3_INT2_OUTPUT_EN_MASK = 0x0400
+BMI3_INT2_OUTPUT_EN_POS = 10
 
-    # Oversampling options
-    OVERSAMPLING_1X = 0x00                      # 1x oversampling
-    OVERSAMPLING_2X = 0x01                      # 2x oversampling
-    OVERSAMPLING_4X = 0x02                      # 4x oversampling
-    OVERSAMPLING_8X = 0x03                      # 8x oversampling
-    OVERSAMPLING_16X = 0x04                     # 16x oversampling
-    OVERSAMPLING_32X = 0x05                     # 32x oversampling
-    OVERSAMPLING_64X = 0x06                     # 64x oversampling
-    OVERSAMPLING_128X = 0x07                    # 128x oversampling
+## Interrupt status bits
+BMI3_INT_STATUS_ANY_MOTION = 0x0002
+BMI3_INT_STATUS_NO_MOTION = 0x0001
+BMI3_INT_STATUS_FLAT = 0x0004
+BMI3_INT_STATUS_ORIENTATION = 0x0008
+BMI3_INT_STATUS_STEP_DETECTOR = 0x0010
+BMI3_INT_STATUS_STEP_COUNTER = 0x0020
+BMI3_INT_STATUS_SIG_MOTION = 0x0040
+BMI3_INT_STATUS_TILT = 0x0080
+BMI3_INT_STATUS_TAP = 0x0100
+BMI3_INT_STATUS_ACC_DRDY = 0x2000
+BMI3_INT_STATUS_GYR_DRDY = 0x1000
 
-    # IIR filter coefficient options
-    IIR_FILTER_BYPASS = 0x00                    # Bypass filter
-    IIR_FILTER_COEFF_1 = 0x01                   # 1st order filter
-    IIR_FILTER_COEFF_3 = 0x02                   # 3rd order filter
-    IIR_FILTER_COEFF_7 = 0x03                   # 7th order filter
-    IIR_FILTER_COEFF_15 = 0x04                  # 15th order filter
-    IIR_FILTER_COEFF_31 = 0x05                  # 31st order filter
-    IIR_FILTER_COEFF_63 = 0x06                  # 63rd order filter
-    IIR_FILTER_COEFF_127 = 0x07                 # 127th order filter
+## Interrupt pin type
+BMI3_INT1 = 0x01
+BMI3_INT2 = 0x02
+BMI3_INT_NONE = 0x00
 
-    # Out-of-range count limit options
-    OOR_COUNT_LIMIT_1 = 0x00                    # 1 count limit
-    OOR_COUNT_LIMIT_3 = 0x01                    # 3 count limit
-    OOR_COUNT_LIMIT_7 = 0x02                    # 7 count limit
-    OOR_COUNT_LIMIT_15 = 0x03                   # 15 count limit
+## Enable/Disable
+BMI3_ENABLE = 0x01
+BMI3_DISABLE = 0x00
 
-    # Power mode options
-    SLEEP_MODE = 0x00                           # Standby mode
-    NORMAL_MODE = 0x01                          # Normal mode
-    SINGLE_SHOT_MODE = 0x02                     # Forced mode > only perform once
-    CONTINOUS_MODE = 0x03                       # Continuous mode
-    DEEP_SLEEP_MODE = 0x04                      # Deep standby mode
+## Context selection
+BMI323_SMART_PHONE_SEL = 0
+BMI323_WEARABLE_SEL = 1
+BMI323_HEARABLE_SEL = 2
 
-    # FIFO mode options
-    FIFO_DISABLED = 0x00                        # FIFO disabled
-    FIFO_TEMPERATURE_DATA = 0x01                # FIFO temperature data only enabled
-    FIFO_PRESSURE_DATA = 0x02                   # FIFO pressure data only enabled
-    FIFO_PRESS_TEMP_DATA = 0x03                 # FIFO pressure and temperature data enabled
+## Flat config bitfields
+BMI3_FLAT_THETA_MASK = 0x003F
+BMI3_FLAT_BLOCKING_MASK = 0x00C0
+BMI3_FLAT_BLOCKING_POS = 6
+BMI3_FLAT_HOLD_TIME_MASK = 0xFF00
+BMI3_FLAT_HOLD_TIME_POS = 8
+BMI3_FLAT_SLOPE_THRES_MASK = 0x00FF
+BMI3_FLAT_HYST_MASK = 0xFF00
+BMI3_FLAT_HYST_POS = 8
 
-    # FIFO downsampling options
-    FIFO_NO_DOWNSAMPLING = 0x00                 # No downsampling
-    FIFO_DOWNSAMPLING_2X = 0x01                 # 2x downsampling
-    FIFO_DOWNSAMPLING_4X = 0x02                 # 4x downsampling
-    FIFO_DOWNSAMPLING_8X = 0x03                 # 8x downsampling
-    FIFO_DOWNSAMPLING_16X = 0x04                # 16x downsampling
-    FIFO_DOWNSAMPLING_32X = 0x05                # 32x downsampling
-    FIFO_DOWNSAMPLING_64X = 0x06                # 64x downsampling
-    FIFO_DOWNSAMPLING_128X = 0x07               # 128x downsampling
+## Tilt config bitfields
+BMI3_TILT_SEGMENT_SIZE_MASK = 0x00FF
+BMI3_TILT_MIN_TILT_ANGLE_MASK = 0xFF00
+BMI3_TILT_MIN_TILT_ANGLE_POS = 8
+BMI3_TILT_BETA_ACC_MEAN_MASK = 0xFFFF
 
-    # FIFO operation mode options
-    FIFO_STREAM_TO_FIFO_MODE = 0x00             # Stream data continuously
-    FIFO_STOP_ON_FULL_MODE = 0x01               # Stop when FIFO full
+## Orientation config bitfields
+BMI3_ORIENT_UD_EN_MASK = 0x0001
+BMI3_ORIENT_MODE_MASK = 0x0006
+BMI3_ORIENT_MODE_POS = 1
+BMI3_ORIENT_BLOCKING_MASK = 0x0018
+BMI3_ORIENT_BLOCKING_POS = 3
+BMI3_ORIENT_THETA_MASK = 0x07E0
+BMI3_ORIENT_THETA_POS = 5
+BMI3_ORIENT_HOLD_TIME_MASK = 0xF800
+BMI3_ORIENT_HOLD_TIME_POS = 11
+BMI3_ORIENT_SLOPE_THRES_MASK = 0x00FF
+BMI3_ORIENT_HYST_MASK = 0xFF00
+BMI3_ORIENT_HYST_POS = 8
 
-    # Interrupt status options
-    INT_STATUS_DRDY = 0x01                      # Data ready
-    INT_STATUS_FIFO_FULL = 0x02                 # FIFO full
-    INT_STATUS_FIFO_THRES = 0x04                # FIFO threshold
-    INT_STATUS_PRESSURE_OOR = 0x08              # Pressure out of range
-    INT_STATUS_POR_SOFTRESET_COMPLETE = 0x10    # Power on reset/soft reset complete
+## Orientation output bitfields
+BMI3_ORIENTATION_PORTRAIT_LANDSCAPE_MASK = 0x0003
+BMI3_ORIENTATION_FACEUP_DOWN_MASK = 0x0004
+BMI3_ORIENTATION_FACEUP_DOWN_POS = 2
 
-    # Interrupt source options
-    INT_DATA_DRDY = 0x01                        # Data ready interrupt
-    INT_FIFO_FULL = 0x02                        # FIFO full interrupt
-    INT_FIFO_THRES = 0x04                       # FIFO threshold interrupt
-    INT_PRESSURE_OOR = 0x08                     # Pressure out-of-range interrupt
+## Orientation constants
+BMI3_FACE_UP = 0x00
+BMI3_FACE_DOWN = 0x01
+BMI3_PORTRAIT_UP_RIGHT = 0x00
+BMI3_LANDSCAPE_LEFT = 0x01
+BMI3_PORTRAIT_UP_DOWN = 0x02
+BMI3_LANDSCAPE_RIGHT = 0x03
 
-    # Interrupt mode options
-    INT_MODE_PULSED = 0x00                      # Pulsed mode
-    INT_MODE_LATCHED = 0x01                     # Latched mode
+## Tap config bitfields
+BMI3_TAP_AXIS_SEL_MASK = 0x0003
+BMI3_TAP_WAIT_FR_TIME_OUT_MASK = 0x0004
+BMI3_TAP_WAIT_FR_TIME_OUT_POS = 2
+BMI3_TAP_MAX_PEAKS_MASK = 0x0038
+BMI3_TAP_MAX_PEAKS_POS = 3
+BMI3_TAP_MODE_MASK = 0x00C0
+BMI3_TAP_MODE_POS = 6
+BMI3_TAP_PEAK_THRES_MASK = 0x03FF
+BMI3_TAP_MAX_GEST_DUR_MASK = 0xFC00
+BMI3_TAP_MAX_GEST_DUR_POS = 10
+BMI3_TAP_MAX_DUR_BW_PEAKS_MASK = 0x000F
+BMI3_TAP_SHOCK_SETT_DUR_MASK = 0x00F0
+BMI3_TAP_SHOCK_SETT_DUR_POS = 4
+BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_MASK = 0x0F00
+BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_POS = 8
+BMI3_TAP_QUITE_TIME_AFTR_GEST_MASK = 0xF000
+BMI3_TAP_QUITE_TIME_AFTR_GEST_POS = 12
 
-    # Interrupt polarity options
-    INT_POL_ACTIVE_LOW = 0x00                   # Active low
-    INT_POL_ACTIVE_HIGH = 0x01                  # Active high
+## Tap status bits
+BMI3_TAP_DET_STATUS_SINGLE = 0x0008
+BMI3_TAP_DET_STATUS_DOUBLE = 0x0010
+BMI3_TAP_DET_STATUS_TRIPLE = 0x0020
 
-    # Interrupt output driver options
-    INT_OD_PUSH_PULL = 0x00                     # Push-pull output
-    INT_OD_OPEN_DRAIN = 0x01                    # Open-drain output
+## Sensor data types
+BMI323_ACCEL = 1
+BMI323_GYRO = 2
+BMI323_ANY_MOTION = 3
+BMI323_NO_MOTION = 4
+BMI323_SIG_MOTION = 2
+BMI323_STEP_COUNTER = 5
+BMI323_TILT = 6
+BMI323_ORIENTATION = 8
+BMI323_FLAT = 9
+BMI323_TAP = 10
 
-    # Interrupt enable options
-    INT_DISABLE = 0x00                          # Interrupt disable
-    INT_ENABLE = 0x01                           # Interrupt enable
 
-    # Baud rate options
-    BAUD_2400  =  0x0001                        # 2400 baud rate
-    BAUD_4800  =  0x0002                        # 4800 baud rate
-    BAUD_9600  =  0x0003                        # 9600 baud rate
-    BAUD_14400  =  0x0004                       # 14400 baud rate
-    BAUD_19200  =  0x0005                       # 19200 baud rate
-    BAUD_38400  =  0x0006                       # 38400 baud rate
-    BAUD_57600  =  0x0007                       # 57600 baud rate
-    BAUD_115200  =  0x0008                      # 115200 baud rate
+## Interrupt pin selection enum
+class eInt_t:
+  eINT1 = BMI3_INT1  ## INT1 pin
+  eINT2 = BMI3_INT2  ## INT2 pin
 
-    class sFIFOData_t(Structure):
-        _fields_ = [
-            ("temperature", c_float * 32),
-            ("pressure", c_float * 32),
-            ("len", c_uint8)
-        ]
 
-        def clear(self):
-            self.len = 0
-            for i in range(32):
-                self.pressure[i] = 0.0
-            for i in range(32):
-                self.temperature[i] = 0.0
+## Axis selection mask
+class eAxis_t:
+  eAxisX = 0x01  ## X axis
+  eAxisY = 0x02  ## Y axis
+  eAxisZ = 0x04  ## Z axis
+  eAxisXYZ = 0x07  ## all axes
 
-    def __init__(self):
-        pass
 
-    def begin(self):
-        '''!
-          @fn begin
-          @brief Initializes the sensor hardware interface
-          @return true if initialization succeeds, false on failure
-        '''
-        self.reset()
-        chip_data = self._read_input_reg(self.REG_I_CHIP_ID, 1)
-        self._calibrated = False
-        self._sealevelAltitude = 0.0
-        if chip_data[0] not in (self.BMP581_CHIP_ID, self.BMP585_CHIP_ID):
-            return False
-        self._enable_pressure(self.ENABLE)
-        return True
+## Any-motion configuration
+class bmi3_any_motion_config:
+  """Any-motion configuration."""
 
-    def set_odr(self, odr):
-        '''!
-          @fn set_odr
-          @brief Configures sensor output data rate (ODR)
-          @param odr Output data rate selection
-          @n Available rates:
-          @n - ODR_240_HZ:    240 Hz
-          @n - ODR_218_5_HZ:  218.5 Hz
-          @n - ODR_199_1_HZ:  199.1 Hz
-          @n - ODR_179_2_HZ:  179.2 Hz
-          @n - ODR_160_HZ:    160 Hz
-          @n - ODR_149_3_HZ:  149.3 Hz
-          @n - ODR_140_HZ:    140 Hz
-          @n - ODR_129_8_HZ:  129.8 Hz
-          @n - ODR_120_HZ:    120 Hz
-          @n - ODR_110_1_HZ:  110.1 Hz
-          @n - ODR_100_2_HZ:  100.2 Hz
-          @n - ODR_89_6_HZ:   89.6 Hz
-          @n - ODR_80_HZ:     80 Hz
-          @n - ODR_70_HZ:     70 Hz
-          @n - ODR_60_HZ:     60 Hz
-          @n - ODR_50_HZ:     50 Hz
-          @n - ODR_45_HZ:     45 Hz
-          @n - ODR_40_HZ:     40 Hz
-          @n - ODR_35_HZ:     35 Hz
-          @n - ODR_30_HZ:     30 Hz
-          @n - ODR_25_HZ:     25 Hz
-          @n - ODR_20_HZ:     20 Hz
-          @n - ODR_15_HZ:     15 Hz
-          @n - ODR_10_HZ:     10 Hz
-          @n - ODR_05_HZ:     5 Hz
-          @n - ODR_04_HZ:     4 Hz
-          @n - ODR_03_HZ:     3 Hz
-          @n - ODR_02_HZ:     2 Hz
-          @n - ODR_01_HZ:     1 Hz
-          @n - ODR_0_5_HZ:    0.5 Hz
-          @n - ODR_0_250_HZ:  0.250 Hz
-          @n - ODR_0_125_HZ:  0.125 Hz
-          @return true if configuration succeeds, false on failure
-        '''
-        if odr not in range(self.ODR_240_HZ, self.ODR_0_125_HZ + 1):
-            return False
-        data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.ODR_POS, self.ODR_WIDTH, odr)
-        self._write_holding_reg(self.REG_H_ODR_CONFIG, data)
-        return True
+  def __init__(self, duration=9, slope_thres=9, acc_ref_up=1, hysteresis=5, wait_time=4):
+    self.duration = duration  # duration in 20 ms units
+    self.slope_thres = slope_thres  # slope threshold
+    self.acc_ref_up = acc_ref_up  # reference update mode
+    self.hysteresis = hysteresis  # hysteresis
+    self.wait_time = wait_time  # wait time
 
-    def set_osr(self, osr_temp, osr_press):
-        '''!
-          @fn set_osr
-          @brief Sets oversampling ratios for temperature and pressure
-          @param osr_temp Temperature oversampling
-          @param osr_press Pressure oversampling
-          @n Supported values:
-          @n - OVERSAMPLING_1X:   1x oversampling
-          @n - OVERSAMPLING_2X:   2x oversampling
-          @n - OVERSAMPLING_4X:   4x oversampling
-          @n - OVERSAMPLING_8X:   8x oversampling
-          @n - OVERSAMPLING_16X:  16x oversampling
-          @n - OVERSAMPLING_32X:  32x oversampling
-          @n - OVERSAMPLING_64X:  64x oversampling
-          @n - OVERSAMPLING_128X: 128x oversampling
-          @return true if configuration succeeds, false on failure
-        '''
-        if osr_temp not in range(self.OVERSAMPLING_1X, self.OVERSAMPLING_128X + 1):
-            return False
-        if osr_press not in range(self.OVERSAMPLING_1X, self.OVERSAMPLING_128X + 1):
-            return False
-        data = self._read_holding_reg(self.REG_H_OSR_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.OSR_T_POS, self.OSR_T_WIDTH, osr_temp)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.OSR_P_POS, self.OSR_P_WIDTH, osr_press)
-        self._write_holding_reg(self.REG_H_OSR_CONFIG, data)
-        return True
 
-    def set_measure_mode(self, mode):
-        '''!
-          @fn setMeasureMode
-          @brief  set the measurement mode of the sensor
-          @param  mode: measurement mode
-          @n      SLEEP_MODE = 0x00.        #// standby mode
-          @n      NORMAL_MODE = 0x01.        #// normal mode
-          @n      SINGLE_SHOT_MODE = 0x02.         #// forced mode > only perform once
-          @n      CONTINOUS_MODE = 0x03.      #// continuous mode
-          @n      DEEP_SLEEP_MODE = 0x04.   #// deep standby mode
-          @return True if the setting is successful, False otherwise.
-        '''
-        if mode not in (self.SLEEP_MODE, self.NORMAL_MODE, self.SINGLE_SHOT_MODE, self.CONTINOUS_MODE, self.DEEP_SLEEP_MODE):
-            return False
-        data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-        currMode = self._REG_GET_BITS(
-            data[0], self.PWR_MODE_POS, self.PWR_MODE_WIDTH)
-        if currMode != self.SLEEP_MODE:
-            self._set_power_mode(self.SLEEP_MODE)
-            time.sleep(0.0025)
-        if mode == self.DEEP_SLEEP_MODE:
-            self._set_deep_standby_mode(self.DEEP_ENABLE)
-        elif mode in (self.CONTINOUS_MODE, self.SINGLE_SHOT_MODE, self.NORMAL_MODE):
-            self._set_power_mode(mode)
-        return True
+## No-motion configuration
+class bmi3_no_motion_config:
+  """No-motion configuration."""
 
-    def reset(self):
-        '''!
-          @fn reset
-          @brief  reset the sensor
-          @return True if the reset is successful, False otherwise
-        '''
-        self._write_holding_reg(self.REG_H_CMD, self.SOFT_RESET_CMD)
-        time.sleep(0.002)
-        self._read_input_reg(self.REG_I_CHIP_ID, 1)
+  def __init__(self, duration=9, slope_thres=9, acc_ref_up=1, hysteresis=5, wait_time=5):
+    self.duration = duration  # duration in 20 ms units
+    self.slope_thres = slope_thres  # slope threshold
+    self.acc_ref_up = acc_ref_up  # reference update mode
+    self.hysteresis = hysteresis  # hysteresis
+    self.wait_time = wait_time  # wait time
 
-        intStatus = self.get_int_status()
-        if intStatus & self.INT_STATUS_POR_SOFTRESET_COMPLETE:
-            return self._enable_pressure(self.ENABLE)
+
+## Significant-motion configuration
+class bmi3_sig_motion_config:
+  """Significant-motion configuration."""
+
+  def __init__(self, block_size=200, peak_2_peak_min=30, peak_2_peak_max=30, mcr_min=0x10, mcr_max=0x10):
+    self.block_size = block_size  # segment size
+    self.peak_2_peak_min = peak_2_peak_min  # min peak-to-peak accel
+    self.peak_2_peak_max = peak_2_peak_max  # max peak-to-peak accel
+    self.mcr_min = mcr_min  # min mean crossing rate
+    self.mcr_max = mcr_max  # max mean crossing rate
+
+
+## Flat detection configuration
+class bmi3_flat_config:
+  """Flat detection configuration."""
+
+  def __init__(self, theta=9, blocking=3, hold_time=50, hysteresis=9, slope_thres=0xCD):
+    self.theta = theta  # max tilt angle
+    self.blocking = blocking  # blocking mode
+    self.hold_time = hold_time  # min flat duration
+    self.hysteresis = hysteresis  # hysteresis
+    self.slope_thres = slope_thres  # slope threshold
+
+
+## Tilt configuration
+class bmi3_tilt_config:
+  """Tilt configuration."""
+
+  def __init__(self, segment_size=90, min_tilt_angle=200, beta_acc_mean=0x00FF):
+    self.segment_size = segment_size
+    self.min_tilt_angle = min_tilt_angle
+    self.beta_acc_mean = beta_acc_mean
+
+
+## Orientation configuration
+class bmi3_orientation_config:
+  """Orientation configuration."""
+
+  def __init__(self, ud_en=1, hold_time=4, hysteresis=5, theta=16, mode=1, slope_thres=30, blocking=3):
+    self.ud_en = ud_en  # face-up/down enable
+    self.hold_time = hold_time  # hold time (20 ms units)
+    self.hysteresis = hysteresis  # hysteresis
+    self.theta = theta  # max tilt angle
+    self.mode = mode  # detection mode
+    self.slope_thres = slope_thres  # slope threshold
+    self.blocking = blocking  # blocking mode
+
+
+## Tap configuration
+class bmi3_tap_detector_config:
+  """Tap detector configuration."""
+
+  def __init__(
+    self,
+    axis_sel=1,
+    wait_for_timeout=1,
+    max_peaks_for_tap=5,
+    mode=1,
+    tap_peak_thres=0x2C,
+    max_gest_dur=0x11,
+    max_dur_between_peaks=5,
+    tap_shock_settling_dur=5,
+    min_quite_dur_between_taps=7,
+    quite_time_after_gest=5,
+  ):
+    self.axis_sel = axis_sel  # axis selection
+    self.wait_for_timeout = wait_for_timeout  # gesture confirmation
+    self.max_peaks_for_tap = max_peaks_for_tap  # max expected peaks
+    self.mode = mode  # detection mode
+    self.tap_peak_thres = tap_peak_thres  # peak threshold
+    self.max_gest_dur = max_gest_dur  # max gesture duration
+    self.max_dur_between_peaks = max_dur_between_peaks  # max duration between peaks
+    self.tap_shock_settling_dur = tap_shock_settling_dur  # shock settling duration
+    self.min_quite_dur_between_taps = min_quite_dur_between_taps  # min quiet time between taps
+    self.quite_time_after_gest = quite_time_after_gest  # quiet time after gesture
+
+
+## Accelerometer range enum
+class eAccelRange_t:
+  eAccelRange2G = 0x00  ## +/- 2g range
+  eAccelRange4G = 0x01  ## +/- 4g range
+  eAccelRange8G = 0x02  ## +/- 8g range
+  eAccelRange16G = 0x03  ## +/- 16g range
+
+
+## Gyroscope range enum
+class eGyroRange_t:
+  eGyroRange125DPS = 0x00  ## +/- 125 dps range
+  eGyroRange250DPS = 0x01  ## +/- 250 dps range
+  eGyroRange500DPS = 0x02  ## +/- 500 dps range
+  eGyroRange1000DPS = 0x03  ## +/- 1000 dps range
+  eGyroRange2000DPS = 0x04  ## +/- 2000 dps range
+
+
+## Accelerometer ODR enum
+class eAccelODR_t:
+  eAccelODR0_78125Hz = 0x01  ## 0.78125 Hz
+  eAccelODR1_5625Hz = 0x02  ## 1.5625 Hz
+  eAccelODR3_125Hz = 0x03  ## 3.125 Hz
+  eAccelODR6_25Hz = 0x04  ## 6.25 Hz
+  eAccelODR12_5Hz = 0x05  ## 12.5 Hz
+  eAccelODR25Hz = 0x06  ## 25 Hz
+  eAccelODR50Hz = 0x07  ## 50 Hz
+  eAccelODR100Hz = 0x08  ## 100 Hz
+  eAccelODR200Hz = 0x09  ## 200 Hz
+  eAccelODR400Hz = 0x0A  ## 400 Hz
+  eAccelODR800Hz = 0x0B  ## 800 Hz
+  eAccelODR1600Hz = 0x0C  ## 1600 Hz
+  eAccelODR3200Hz = 0x0D  ## 3200 Hz
+  eAccelODR6400Hz = 0x0E  ## 6400 Hz
+
+
+## Gyroscope ODR enum
+class eGyroODR_t:
+  eGyroODR0_78125Hz = 0x01  ## 0.78125 Hz
+  eGyroODR1_5625Hz = 0x02  ## 1.5625 Hz
+  eGyroODR3_125Hz = 0x03  ## 3.125 Hz
+  eGyroODR6_25Hz = 0x04  ## 6.25 Hz
+  eGyroODR12_5Hz = 0x05  ## 12.5 Hz
+  eGyroODR25Hz = 0x06  ## 25 Hz
+  eGyroODR50Hz = 0x07  ## 50 Hz
+  eGyroODR100Hz = 0x08  ## 100 Hz
+  eGyroODR200Hz = 0x09  ## 200 Hz
+  eGyroODR400Hz = 0x0A  ## 400 Hz
+  eGyroODR800Hz = 0x0B  ## 800 Hz
+  eGyroODR1600Hz = 0x0C  ## 1600 Hz
+  eGyroODR3200Hz = 0x0D  ## 3200 Hz
+  eGyroODR6400Hz = 0x0E  ## 6400 Hz
+
+
+## Accelerometer mode enum
+class eAccelMode_t:
+  eAccelModeLowPower = 0  ## low power mode
+  eAccelModeNormal = 1  ## normal mode
+  eAccelModeHighPerf = 2  ## high performance mode
+
+
+## Gyroscope mode enum
+class eGyroMode_t:
+  eGyroModeLowPower = 0  ## low power mode
+  eGyroModeNormal = 1  ## normal mode
+  eGyroModeHighPerf = 2  ## high performance mode
+
+
+## Sensor data structure
+class sSensorData(Structure):
+  _pack_ = 1
+  _fields_ = [('x', c_float), ('y', c_float), ('z', c_float)]
+
+  def __init__(self, x=0.0, y=0.0, z=0.0):
+    self.x = x
+    self.y = y
+    self.z = z
+
+  def __str__(self):
+    return f"x={self.x:.3f}, y={self.y:.3f}, z={self.z:.3f}"
+
+
+class DFRobot_BMI323:
+  """BMI323 sensor class (I2C interface)."""
+
+  def __init__(self, bus=1, i2c_addr=DFRobot_BMI323_IIC_ADDR):
+    """Constructor."""
+    self.i2cbus = smbus.SMBus(bus)
+    self.i2c_addr = i2c_addr
+    self._initialized = False
+    self._accel_range = 2.0  # default +/-2g
+    self._gyro_range = 250.0  # default +/-250 dps
+    self._dummy_byte = BMI3_I2C_DUMMY_BYTE  # I2C uses 2 dummy bytes
+    self._chip_id = 0
+    self._resolution = 16  # 16-bit resolution
+
+  def begin(self):
+    """Initialization function.
+    @details Initialize I2C interface, chip registers and feature context
+    @return bool type, indicates the initialization status
+    @retval ERR_OK Initialization successful
+    @retval ERR_DATA_BUS or ERR_IC_VERSION Initialization failed
+    """
+    try:
+      logger.info("Soft reset...")
+      rslt = self._soft_reset()
+      if rslt != BMI323_OK:
+        logger.error("Soft reset failed")
+        return ERR_DATA_BUS
+
+      logger.info("Reading chip ID...")
+      chip_id_data = self._read_regs(BMI3_REG_CHIP_ID, 2)
+      if chip_id_data is None or len(chip_id_data) < 2:
+        logger.error("ERR_DATA_BUS: failed to read chip ID")
+        return ERR_DATA_BUS
+
+      self._chip_id = chip_id_data[0] & BMI3_CHIP_ID_MASK
+      rev_id = (chip_id_data[1] & BMI3_REV_ID_MASK) >> BMI3_REV_ID_POS
+
+      logger.info("chip_id=0x%02X, rev_id=0x%02X", self._chip_id, rev_id)
+
+      if self._chip_id != DFRobot_BMI323_CHIP_ID:
+        logger.warning("ERR_IC_VERSION: chip id mismatch, expect 0x%02X, got 0x%02X", DFRobot_BMI323_CHIP_ID, self._chip_id)
+        return ERR_IC_VERSION
+
+      self._accel_bit_width = 14 if rev_id == 1 else 13
+
+      logger.info("Enabling feature engine...")
+      rslt = self._enable_feature_engine()
+      if rslt != BMI323_OK:
+        logger.error("Enable feature engine failed")
+        return ERR_DATA_BUS
+
+      # Context selection (wearable) skipped; requires extra feature settings.
+      logger.info("Configuring context selection (wearable mode)... skipped")
+
+      self._initialized = True
+      logger.info("BMI323 init ok")
+      return ERR_OK
+
+    except Exception as e:
+      logger.error("Initialization failed: %s", str(e))
+      import traceback
+
+      traceback.print_exc()
+      return ERR_DATA_BUS
+
+  def configAccel(self, odr, range_val, mode=eAccelMode_t.eAccelModeNormal):
+    """Configure accelerometer.
+    @param odr Output data rate selection (see: eAccelODR_t)
+    @n Available rates:
+    @n - eAccelODR0_78125Hz:  0.78125 Hz
+    @n - eAccelODR1_5625Hz:   1.5625 Hz
+    @n - eAccelODR3_125Hz:    3.125 Hz
+    @n - eAccelODR6_25Hz:     6.25 Hz
+    @n - eAccelODR12_5Hz:     12.5 Hz
+    @n - eAccelODR25Hz:       25 Hz
+    @n - eAccelODR50Hz:       50 Hz
+    @n - eAccelODR100Hz:      100 Hz
+    @n - eAccelODR200Hz:      200 Hz
+    @n - eAccelODR400Hz:      400 Hz
+    @n - eAccelODR800Hz:      800 Hz
+    @n - eAccelODR1600Hz:     1600 Hz
+    @n - eAccelODR3200Hz:     3200 Hz
+    @n - eAccelODR6400Hz:     6400 Hz
+    @n @note ODR range limitations (based on operating mode):
+    @n - Low power mode: 0.78Hz ~ 400Hz
+    @n - Normal mode:    12.5Hz ~ 6400Hz
+    @n - High performance mode: 12.5Hz ~ 6400Hz
+    @param range_val Range selection (see: eAccelRange_t)
+    @n Available ranges:
+    @n - eAccelRange2G:   ±2g
+    @n - eAccelRange4G:   ±4g
+    @n - eAccelRange8G:   ±8g
+    @n - eAccelRange16G:  ±16g
+    @param mode Operating mode selection (see: eAccelMode_t), default eAccelModeNormal
+    @n Available modes:
+    @n - eAccelModeLowPower:  Low power mode
+    @n - eAccelModeNormal:    Normal mode (default)
+    @n - eAccelModeHighPerf:  High performance mode
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    try:
+      reg_data = self._read_regs(BMI3_REG_ACC_CONF, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read accel config failed")
         return False
 
-    def read_temperature(self):
-        '''!
-          @fn read_temperature
-          @brief  read the temperature of the sensor
-          @return temperature in Celsius
-        '''
-        data = self._read_input_reg(self.REG_I_TEMP_DATA_XLSB, 3)
+      if mode == eAccelMode_t.eAccelModeLowPower:
+        acc_mode = BMI3_ACC_MODE_LOW_PWR
+        avg_num = BMI3_ACC_AVG2
+        bwp = BMI3_ACC_BW_ODR_HALF
+      elif mode == eAccelMode_t.eAccelModeNormal:
+        acc_mode = BMI3_ACC_MODE_NORMAL
+        avg_num = BMI3_ACC_AVG1
+        bwp = BMI3_ACC_BW_ODR_HALF
+      elif mode == eAccelMode_t.eAccelModeHighPerf:
+        acc_mode = BMI3_ACC_MODE_HIGH_PERF
+        avg_num = BMI3_ACC_AVG1
+        bwp = BMI3_ACC_BW_ODR_QUARTER
+      else:
+        acc_mode = BMI3_ACC_MODE_NORMAL
+        avg_num = BMI3_ACC_AVG1
+        bwp = BMI3_ACC_BW_ODR_HALF
 
-        tmpData = self.convert_data(data)
+      reg_byte0 = 0
+      reg_byte1 = 0
 
-        return tmpData / 65536.0
+      reg_byte0 = (reg_byte0 & ~BMI3_ACC_ODR_MASK) | (odr & BMI3_ACC_ODR_MASK)
+      reg_byte0 = (reg_byte0 & ~BMI3_ACC_RANGE_MASK) | ((range_val << BMI3_ACC_RANGE_POS) & BMI3_ACC_RANGE_MASK)
+      reg_byte0 = (reg_byte0 & ~BMI3_ACC_BW_MASK) | ((bwp << BMI3_ACC_BW_POS) & BMI3_ACC_BW_MASK)
 
-    def read_pressure(self):
-        '''!
-          @fn read_pressure
-          @brief  read the pressure of the sensor
-          @return pressure in Pascal
-        '''
-        data = self._read_input_reg(self.REG_I_PRESS_DATA_XLSB, 3)
+      reg_byte1_temp = 0
+      reg_byte1_temp = (reg_byte1_temp & ~BMI3_ACC_AVG_NUM_MASK) | ((avg_num << BMI3_ACC_AVG_NUM_POS) & BMI3_ACC_AVG_NUM_MASK)
+      reg_byte1_temp = (reg_byte1_temp & ~BMI3_ACC_MODE_MASK) | ((acc_mode << BMI3_ACC_MODE_POS) & BMI3_ACC_MODE_MASK)
+      reg_byte1 = (reg_byte1_temp >> 8) & 0xFF
 
-        pressData = self.convert_data(data) / 64.0
-        return pressData
+      config_data = [reg_byte0, reg_byte1]
+      rslt = self._write_regs(BMI3_REG_ACC_CONF, config_data)
+      if rslt != BMI323_OK:
+        logger.error("Write accel config failed")
+        return False
 
-    def read_altitude(self):
-        '''!
-          @fn read_altitude
-          @brief  read the altitude of the sensor
-          @return altitude in meters
-        '''
-        data = self._read_input_reg(self.REG_I_TEMP_DATA_XLSB, 6)
+      if range_val == eAccelRange_t.eAccelRange2G:
+        self._accel_range = 2.0
+      elif range_val == eAccelRange_t.eAccelRange4G:
+        self._accel_range = 4.0
+      elif range_val == eAccelRange_t.eAccelRange8G:
+        self._accel_range = 8.0
+      elif range_val == eAccelRange_t.eAccelRange16G:
+        self._accel_range = 16.0
+      else:
+        self._accel_range = 2.0
 
-        tmpData = self.convert_data(data)
+      logger.info("Accel configured: ODR=0x%02X, Range=0x%02X, Mode=0x%02X", odr, range_val, acc_mode)
+      return True
 
-        pressData = self.convert_data(data[3:6])
+    except Exception as e:
+      logger.error("Configure accel failed: %s", str(e))
+      return False
 
-        temperature = tmpData / 65536.0
-        pressure = pressData / 64.0
-        if self._calibrated:
-            seaLevelPressPa = (pressure / (1.0 - (self._sealevelAltitude / 44307.7)) ** 5.255302)
-            pressure = pressure - seaLevelPressPa + self.STANDARD_SEA_LEVEL_PRESSURE_PA
-        return self._calculate_altitude(temperature, pressure)
+  def configGyro(self, odr, range_val, mode=eGyroMode_t.eGyroModeNormal):
+    """Configure gyroscope.
+    @param odr Output data rate selection (see: eGyroODR_t)
+    @n Available rates:
+    @n - eGyroODR0_78125Hz: 0.78125 Hz
+    @n - eGyroODR1_5625Hz:  1.5625 Hz
+    @n - eGyroODR3_125Hz:   3.125 Hz
+    @n - eGyroODR6_25Hz:    6.25 Hz
+    @n - eGyroODR12_5Hz:    12.5 Hz
+    @n - eGyroODR25Hz:      25 Hz
+    @n - eGyroODR50Hz:      50 Hz
+    @n - eGyroODR100Hz:     100 Hz
+    @n - eGyroODR200Hz:     200 Hz
+    @n - eGyroODR400Hz:     400 Hz
+    @n - eGyroODR800Hz:     800 Hz
+    @n - eGyroODR1600Hz:    1600 Hz
+    @n - eGyroODR3200Hz:    3200 Hz
+    @n - eGyroODR6400Hz:    6400 Hz
+    @n @note ODR range limitations (based on operating mode):
+    @n - Low power mode: 0.78Hz ~ 400Hz
+    @n - Normal mode:    12.5Hz ~ 6400Hz
+    @n - High performance mode: 12.5Hz ~ 6400Hz
+    @param range_val Range selection (see: eGyroRange_t)
+    @n Available ranges:
+    @n - eGyroRange125DPS:   ±125dps
+    @n - eGyroRange250DPS:   ±250dps
+    @n - eGyroRange500DPS:   ±500dps
+    @n - eGyroRange1000DPS:  ±1000dps
+    @n - eGyroRange2000DPS:  ±2000dps
+    @param mode Operating mode selection (see: eGyroMode_t), default eGyroModeNormal
+    @n Available modes:
+    @n - eGyroModeLowPower:  Low power mode
+    @n - eGyroModeNormal:    Normal mode (default)
+    @n - eGyroModeHighPerf:  High performance mode
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
 
-    def config_iir(self, iir_t, iir_p):
-        '''!
-          @fn config_iir
-          @brief Configures IIR filter coefficients
-          @param iir_t Temperature IIR filter
-          @param iir_p Pressure IIR filter
-          @n Available coefficients:
-          @n - IIR_FILTER_BYPASS:   Bypass filter
-          @n - IIR_FILTER_COEFF_1:  1st order filter
-          @n - IIR_FILTER_COEFF_3:  3rd order filter
-          @n - IIR_FILTER_COEFF_7:  7th order filter
-          @n - IIR_FILTER_COEFF_15: 15th order filter
-          @n - IIR_FILTER_COEFF_31: 31st order filter
-          @n - IIR_FILTER_COEFF_63: 63rd order filter
-          @n - IIR_FILTER_COEFF_127:127th order filter
-          @return True if configuration is successful, False otherwise
-        '''
-        if iir_t not in range(self.IIR_FILTER_BYPASS, self.IIR_FILTER_COEFF_127 + 1):
-            return False
-        if iir_p not in range(self.IIR_FILTER_BYPASS, self.IIR_FILTER_COEFF_127 + 1):
-            return False
+    try:
+      reg_data = self._read_regs(BMI3_REG_GYR_CONF, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read gyro config failed")
+        return False
 
-        currMode = self._get_power_mode()
-        self.set_measure_mode(self.SLEEP_MODE)
-        data = self._read_holding_reg(self.REG_H_DSP_CONFIG, 2)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.SHDW_SEL_IIR_T_POS, self.SHDW_SEL_IIR_T_WIDTH, self.ENABLE)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.SHDW_SEL_IIR_P_POS, self.SHDW_SEL_IIR_P_WIDTH, self.ENABLE)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.IIR_FLUSH_FORCED_EN_POS, self.IIR_FLUSH_FORCED_EN_WIDTH, self.ENABLE)
+      if mode == eGyroMode_t.eGyroModeLowPower:
+        gyr_mode = BMI3_GYR_MODE_LOW_PWR
+        avg_num = BMI3_GYR_AVG2
+        bwp = BMI3_GYR_BW_ODR_HALF
+      elif mode == eGyroMode_t.eGyroModeNormal:
+        gyr_mode = BMI3_GYR_MODE_NORMAL
+        avg_num = BMI3_GYR_AVG1
+        bwp = BMI3_GYR_BW_ODR_HALF
+      elif mode == eGyroMode_t.eGyroModeHighPerf:
+        gyr_mode = BMI3_GYR_MODE_HIGH_PERF
+        avg_num = BMI3_GYR_AVG1
+        bwp = BMI3_GYR_BW_ODR_QUARTER
+      else:
+        gyr_mode = BMI3_GYR_MODE_NORMAL
+        avg_num = BMI3_GYR_AVG1
+        bwp = BMI3_GYR_BW_ODR_HALF
 
-        data[1] = self._REG_SET_BITS(
-            data[1], self.SET_IIR_T_POS, self.SET_IIR_T_WIDTH, iir_t)
-        data[1] = self._REG_SET_BITS(
-            data[1], self.SET_IIR_T_POS, self.SET_IIR_P_WIDTH, iir_p)
+      reg_byte0 = 0
+      reg_byte1 = 0
 
-        self._write_holding_reg(self.REG_H_DSP_CONFIG, data)
-        if currMode not in (self.DEEP_SLEEP_MODE, self.SLEEP_MODE):
-            return self.set_measure_mode(currMode)
-        return True
+      reg_byte0 = (reg_byte0 & ~BMI3_GYR_ODR_MASK) | (odr & BMI3_GYR_ODR_MASK)
+      reg_byte0 = (reg_byte0 & ~BMI3_GYR_RANGE_MASK) | ((range_val << BMI3_GYR_RANGE_POS) & BMI3_GYR_RANGE_MASK)
+      reg_byte0 = (reg_byte0 & ~BMI3_GYR_BW_MASK) | ((bwp << BMI3_GYR_BW_POS) & BMI3_GYR_BW_MASK)
 
-    def config_fifo(self, frame_sel=FIFO_PRESS_TEMP_DATA, dec_sel=FIFO_NO_DOWNSAMPLING, mode=FIFO_STREAM_TO_FIFO_MODE, threshold=0x00):
-        '''!
-          @fn config_fifo
-          @brief Configures FIFO operation parameters
-          @param frame_sel Data frame type
-          @n Available types:
-          @n - FIFO_DISABLED:    FIFO disabled
-          @n - FIFO_TEMPERATURE_DATA: Temperature data only
-          @n - FIFO_PRESSURE_DATA:    Pressure data only
-          @n - FIFO_PRESS_TEMP_DATA:  Pressure and temperature data
+      reg_byte1_temp = 0
+      reg_byte1_temp = (reg_byte1_temp & ~BMI3_GYR_AVG_NUM_MASK) | ((avg_num << BMI3_GYR_AVG_NUM_POS) & BMI3_GYR_AVG_NUM_MASK)
+      reg_byte1_temp = (reg_byte1_temp & ~BMI3_GYR_MODE_MASK) | ((gyr_mode << BMI3_GYR_MODE_POS) & BMI3_GYR_MODE_MASK)
+      reg_byte1 = (reg_byte1_temp >> 8) & 0xFF
 
-          @param dec_sel Downsampling ratio
-          @n Available ratios:
-          @n - FIFO_NO_DOWNSAMPLING: No downsampling
-          @n - FIFO_DOWNSAMPLING_2X:  2x downsampling
-          @n - FIFO_DOWNSAMPLING_4X:  4x downsampling
-          @n - FIFO_DOWNSAMPLING_8X:  8x downsampling
-          @n - FIFO_DOWNSAMPLING_16X: 16x downsampling
-          @n - FIFO_DOWNSAMPLING_32X: 32x downsampling
-          @n - FIFO_DOWNSAMPLING_64X: 64x downsampling
-          @n - FIFO_DOWNSAMPLING_128X:128x downsampling
+      config_data = [reg_byte0, reg_byte1]
+      rslt = self._write_regs(BMI3_REG_GYR_CONF, config_data)
+      if rslt != BMI323_OK:
+        logger.error("Write gyro config failed")
+        return False
 
-          @param mode FIFO operation mode
-          @n Available modes:
-          @n - FIFO_STREAM_TO_FIFO_MODE: Stream data continuously
-          @n - FIFO_STOP_ON_FULL_MODE:   Stop when FIFO full
+      if range_val == eGyroRange_t.eGyroRange125DPS:
+        self._gyro_range = 125.0
+      elif range_val == eGyroRange_t.eGyroRange250DPS:
+        self._gyro_range = 250.0
+      elif range_val == eGyroRange_t.eGyroRange500DPS:
+        self._gyro_range = 500.0
+      elif range_val == eGyroRange_t.eGyroRange1000DPS:
+        self._gyro_range = 1000.0
+      elif range_val == eGyroRange_t.eGyroRange2000DPS:
+        self._gyro_range = 2000.0
+      else:
+        self._gyro_range = 250.0
 
-          @param threshold FIFO trigger threshold (0=disable, 1-31=frames)]
-          @n - 0x0F: 15 frames. This is the maximum setting in PT-mode. The most
-          significant bit is ignored.
-          @n - 0x1F: 31 frames. This is the maximum setting in P- or T-mode.
-          @return True if configuration is successful, False otherwise.
-        '''
-        if frame_sel not in range(self.FIFO_DISABLED, self.FIFO_PRESS_TEMP_DATA + 1):
-            return False
-        if dec_sel not in range(self.FIFO_NO_DOWNSAMPLING, self.FIFO_DOWNSAMPLING_128X + 1):
-            return False
-        if mode not in (self.FIFO_STREAM_TO_FIFO_MODE, self.FIFO_STOP_ON_FULL_MODE):
-            return False
-        if frame_sel == self.FIFO_TEMPERATURE_DATA or frame_sel == self.FIFO_PRESSURE_DATA:
-            if threshold > 0x1F:
-                return False
-        elif frame_sel == self.FIFO_PRESS_TEMP_DATA:
-            if threshold > 0x0F:
-                return False
-        currMode = self._get_power_mode()
-        self.set_measure_mode(self.SLEEP_MODE)
-        data = self._read_holding_reg(self.REG_H_DSP_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.FIFO_SEL_IIR_T_POS, self.FIFO_SEL_IIR_T_WIDTH, self.ENABLE)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.FIFO_SEL_IIR_P_POS, self.FIFO_SEL_IIR_P_WIDTH, self.ENABLE)
-        self._write_holding_reg(self.REG_H_DSP_CONFIG, data)
+      logger.info("Gyro configured: ODR=0x%02X, Range=0x%02X, Mode=0x%02X", odr, range_val, gyr_mode)
+      return True
 
-        data = self._read_holding_reg(self.REG_H_FIFO_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.FIFO_MODE_POS, self.FIFO_MODE_WIDTH, mode)
-        data[0] = self._set_fifo_threshold(data[0], frame_sel, threshold)
-        self._write_holding_reg(self.REG_H_FIFO_CONFIG, data)
+    except Exception as e:
+      logger.error("Configure gyro failed: %s", str(e))
+      return False
 
-        data = self._read_holding_reg(self.REG_H_FIFO_SEL, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.FIFO_FRAME_SEL_POS, self.FIFO_FRAME_SEL_WIDTH, frame_sel)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.FIFO_DEC_SEL_POS, self.FIFO_DEC_SEL_WIDTH, dec_sel)
-        self._write_holding_reg(self.REG_H_FIFO_SEL, data)
+  def getAccelGyroData(self, accel, gyro):
+    """Read accelerometer and gyroscope simultaneously and return physical units.
+    @details Read accelerometer and gyroscope raw data at once, convert to g/dps and return
+    @param accel Accelerometer output
+    @param gyro Gyroscope output
+    @return bool type, indicates the read status
+    @retval True Read successful
+    @retval False Read failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
 
-        if currMode not in (self.DEEP_SLEEP_MODE, self.SLEEP_MODE):
-            return self.set_measure_mode(currMode)
-        return True
+    if accel is None or gyro is None:
+      logger.error("Output parameter is None")
+      return False
 
-    def get_fifo_count(self):
-        '''!
-          @fn get_fifo_count
-          @brief  Get the number of frames in the FIFO.
-          @return Number of frames in the FIFO.
-        '''
-        data = self._read_input_reg(self.REG_I_FIFO_COUNT, 1)
-        count = self._REG_GET_BITS(
-            data[0], self.FIFO_COUNT_POS, self.FIFO_COUNT_WIDTH)
-        return count
+    try:
+      reg_data = self._read_regs(BMI3_REG_ACC_DATA_X, 19)
+      if reg_data is None or len(reg_data) < 19:
+        logger.error("Read sensor data failed")
+        return False
 
-    def get_fifo_data(self):
-        '''!
-          @fn getFIFOData
-          @brief Reads all data from FIFO
-          @return sFIFOData_t Struct containing pressure and temperature data
-          @n - len: Number of stored data frames (0-31)
-          @n - pressure: Array of pressure values
-          @n - temperature: Array of temperature values
-        '''
-        fifo_data = self.sFIFOData_t()
-        fifo_data.clear()
-        fifo_count = self.get_fifo_count()
-        fifo_data.len = fifo_count
-        data = self._read_holding_reg(self.REG_H_FIFO_SEL, 1)
-        fifo_frame_sel = self._REG_GET_BITS(
-            data[0], self.FIFO_FRAME_SEL_POS, self.FIFO_FRAME_SEL_WIDTH)
-        if fifo_frame_sel == self.FIFO_PRESSURE_DATA:
-            for i in range(fifo_count):
-                data = self._read_input_reg(self.REG_I_FIFO_DATA, 3)
-                pressure = self.convert_data(data) / 64.0
-                fifo_data.pressure[i] = pressure
-        elif fifo_frame_sel == self.FIFO_TEMPERATURE_DATA:
-            for i in range(fifo_count):
-                data = self._read_input_reg(self.REG_I_FIFO_DATA, 3)
-                fifo_data.temperature[i] = self.convert_data(data) / 65536.0
-        elif fifo_frame_sel == self.FIFO_PRESS_TEMP_DATA:
-            for i in range(fifo_count):
-                data = self._read_input_reg(self.REG_I_FIFO_DATA, 6)
-                tmpData = self.convert_data(data)
-                pressData = self.convert_data(data[3:6])
-                fifo_data.temperature[i] = tmpData / 65536.0
-                pressure = pressData / 64.0
-                fifo_data.pressure[i] = pressure
-        return fifo_data
+      accel_x_raw = self._int16_from_bytes(reg_data[0], reg_data[1])
+      accel_y_raw = self._int16_from_bytes(reg_data[2], reg_data[3])
+      accel_z_raw = self._int16_from_bytes(reg_data[4], reg_data[5])
 
-    def config_interrupt(self, int_mode, int_pol, int_od):
-        '''!
-          @fn config_interrupt
-          @brief Configures interrupt behavior
-          @param int_mode Trigger mode
-          @n Available modes:
-          @n - INT_MODE_PULSED: Pulsed mode
-          @n - INT_MODE_LATCHED: Latched mode
+      gyro_x_raw = self._int16_from_bytes(reg_data[6], reg_data[7])
+      gyro_y_raw = self._int16_from_bytes(reg_data[8], reg_data[9])
+      gyro_z_raw = self._int16_from_bytes(reg_data[10], reg_data[11])
 
-          @param int_pol Signal polarity
-          @n Available polarities:
-          @n - INT_POL_ACTIVE_LOW: Active low
-          @n - INT_POL_ACTIVE_HIGH: Active high
+      accel.x = self._lsb_to_g(accel_x_raw, self._accel_range)
+      accel.y = self._lsb_to_g(accel_y_raw, self._accel_range)
+      accel.z = self._lsb_to_g(accel_z_raw, self._accel_range)
 
-          @param int_od Output driver type
-          @n Available types:
-          @n - INT_OD_PUSH_PULL: Push-pull output
-          @n - INT_OD_OPEN_DRAIN: Open-drain output
-          @return True if configuration is successful, False otherwise.
-        '''
-        if int_mode not in (self.INT_MODE_PULSED, self.INT_MODE_LATCHED):
-            return False
-        if int_pol not in (self.INT_POL_ACTIVE_LOW, self.INT_POL_ACTIVE_HIGH):
-            return False
-        if int_od not in (self.INT_OD_PUSH_PULL, self.INT_OD_OPEN_DRAIN):
-            return False
-        '''
-          Any change between latched/pulsed mode has to be applied while interrupt is disabled
-          Step 1 : Turn off all INT sources (INT_SOURCE -> 0x00)
-        '''
-        self._write_holding_reg(self.REG_H_INT_SOURCE, [0x00])
-        data = self._read_holding_reg(self.REG_H_INT_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.INT_MODE_POS, self.INT_MODE_WIDTH, int_mode)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.INT_POL_POS, self.INT_POL_WIDTH, int_pol)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.INT_OD_POS, self.INT_OD_WIDTH, int_od)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.INT_EN_POS, self.INT_EN_WIDTH, self.INT_ENABLE)
-        self._write_holding_reg(self.REG_H_INT_CONFIG, data)
-        return True
+      gyro.x = self._lsb_to_dps(gyro_x_raw, self._gyro_range)
+      gyro.y = self._lsb_to_dps(gyro_y_raw, self._gyro_range)
+      gyro.z = self._lsb_to_dps(gyro_z_raw, self._gyro_range)
 
-    def set_int_source(self, source):
-        '''!
-          @fn set_int_source
-          @brief Enables specific interrupt sources
-          @param source Bitmask of triggers
-          @n Available sources:
-          @n - INT_DATA_DRDY:    Data ready interrupt
-          @n - INT_FIFO_FULL:    FIFO full interrupt
-          @n - INT_FIFO_THRES:   FIFO threshold interrupt
-          @n - INT_PRESSURE_OOR: Pressure out-of-range interrupt
-          @return True if configuration is successful, False otherwise.
-        '''
-        VALID_INT_MASK = self.INT_DATA_DRDY | self.INT_FIFO_FULL | self.INT_FIFO_THRES | self.INT_PRESSURE_OOR
-        if source & ~VALID_INT_MASK:
-            return False
-        data = source & VALID_INT_MASK
-        self._write_holding_reg(self.REG_H_INT_SOURCE, data)
-        return True
+      return True
 
-    def get_int_status(self):
-        '''!
-            @brief  Get the interrupt status of the sensor.
-            @return Interrupt status.
-            @n      INT_STATUS_DRDY = 0x01,                   # // data ready
-            @n      INT_STATUS_FIFO_FULL = 0x02,              # // FIFO full
-            @n      INT_STATUS_FIFO_THRES = 0x04,             # // FIFO threshold
-            @n      INT_STATUS_PRESSURE_OOR = 0x08,           # // pressure out of range
-            # // power on reset/soft reset complete
-            @n      INT_STATUS_POR_SOFTRESET_COMPLETE = 0x10,
-        '''
-        data = self._read_input_reg(self.REG_I_INT_STATUS, 1)
-        return data[0]
+    except Exception as e:
+      logger.error("Read sensor data failed: %s", str(e))
+      return False
 
-    def set_oor_press(self, oor, range_val, cnt_lim):
-        '''!
-            @brief  Set the out of range_val pressure of the sensor.
-            @param  oor: Out of range_val pressure.
-            @n      0x00000 - 0x1FFFF: Out of range_val pressure
-            @param  range_val: Out of range pressure range_val.
-            @n      0x00 - 0xFF: Out of range pressure range_val  (oor - range_val, oor + range_val)
-            @param  cnt_lim: Out of range pressure count limit.
-            @n      OOR_COUNT_LIMIT_1  = 0x00
-            @n      OOR_COUNT_LIMIT_3  = 0x01
-            @n      OOR_COUNT_LIMIT_7  = 0x02
-            @n      OOR_COUNT_LIMIT_15 = 0x03
-            @return True if configuration is successful, False otherwise.
-        '''
-        if oor not in range(0x00000, 0x1FFFF + 1):
-            return False
-        if range_val not in range(0x00, 0xFF + 1):
-            return False
-        if cnt_lim not in (self.OOR_COUNT_LIMIT_1, self.OOR_COUNT_LIMIT_3, self.OOR_COUNT_LIMIT_7, self.OOR_COUNT_LIMIT_15):
-            return False
-        currMode = self._get_power_mode()
-        self.set_measure_mode(self.SLEEP_MODE)
+  def enableStepCounterInt(self, pin):
+    """Enable step counter interrupt function.
+    @details Configure step counter function and map to specified interrupt pin, interrupt will be triggered when step count changes
+    @param pin Bound interrupt pin (eINT1 or eINT2)
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
 
-        data = self._read_holding_reg(self.REG_H_OOR_THR_P_LSB, 4)
-        data[0] = oor & 0xFF
-        data[1] = (oor >> 8) & 0xFF
-        data[3] = self._REG_SET_BITS(data[3], self.OOR_THR_P_16_POS,
-                           self.OOR_THR_P_16_WIDTH, (oor >> 16) & 0x01)
+    try:
+      if not self._enableStepCounterFeature():
+        logger.error("Enable step_counter feature failed")
+        return False
 
-        data[2] = range_val
-        data[3] = self._REG_SET_BITS(data[3], self.CNT_LIM_POS,
-                           self.CNT_LIM_WIDTH, cnt_lim)
-        self._write_holding_reg(self.REG_H_OOR_THR_P_LSB, data)
-        if currMode not in (self.DEEP_SLEEP_MODE, self.SLEEP_MODE):
-            return self.set_measure_mode(currMode)
-        return True
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
 
-    def calibrated_absolute_difference(self, altitude):
-        '''!
-            @fn calibratedAbsoluteDifference
-            @brief use the given current altitude as a reference value, eliminate the absolute difference of subsequent pressure and altitude data
-            @param altitude current altitude
-            @return boolean, indicates whether the reference value is set successfully
-            @retval True indicates the reference value is set successfully
-            @retval False indicates fail to set the reference value
-        '''
-        ret = False
-        if altitude > 0:
-            self._calibrated = True
-            self._sealevelAltitude = altitude
-            ret = True
-        return ret
+      if not self._mapInterrupt(pin, 'step_detector'):
+        logger.error("Map interrupt failed")
+        return False
 
-    def _enable_pressure(self, enable):
-        '''!
-            @brief  enable or disable pressure measurement
-            @param  enable: enable or disable.
-            @n      eENABLE = 0x01
-            @n      eDISABLE = 0x00
-            @return True if the setting is successful, False otherwise
-        '''
-        if enable not in (self.ENABLE, self.DISABLE):
-            return False
-        data = self._read_holding_reg(self.REG_H_OSR_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.PRESS_EN_POS, self.PRESS_EN_WIDTH, enable)
-        self._write_holding_reg(self.REG_H_OSR_CONFIG, data)
-        return True
+      logger.info("Step counter interrupt enabled: pin=%d", pin)
+      return True
 
-    def _set_deep_standby_mode(self, deepMode):
-        '''!
-            @brief  Set the deep standby mode of the sensor.
-            @param  deepMode: Deep standby mode.
-            @n      DEEP_DISABLE = 0x00,
-            @n      DEEP_ENABLE = 0x01,
-            @return True if configuration is successful, False otherwise.
-        '''
-        if deepMode == self.DEEP_ENABLE:
-            data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-            data[0] = self._REG_SET_BITS(
-                data[0], self.DEEP_DIS_POS, self.DEEP_DIS_WIDTH, self.DEEP_ENABLE)
-            data[0] = self._REG_SET_BITS(
-                data[0], self.ODR_POS, self.ODR_WIDTH, self.ODR_01_HZ)
-            self._write_holding_reg(self.REG_H_ODR_CONFIG, data)
+    except Exception as e:
+      logger.error("Enable step counter interrupt failed: %s", str(e))
+      return False
 
-            data = self._read_holding_reg(self.REG_H_FIFO_SEL, 1)
-            data[0] = self._REG_SET_BITS(
-                data[0], self.FIFO_FRAME_SEL_POS, self.FIFO_FRAME_SEL_WIDTH, self.FIFO_DISABLED)
-            self._write_holding_reg(self.REG_H_FIFO_SEL, data)
+  def readStepCounter(self):
+    """Read step counter data.
+    @return uint16_t Step count value (16-bit, saturated at 0xFFFF).
+    @retval 0 Step counter read failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return 0
 
-            data = self._read_holding_reg(self.REG_H_DSP_IIR, 1)
-            data[0] = self._REG_SET_BITS(
-                data[0], self.SET_IIR_T_POS, self.SET_IIR_T_WIDTH, self.IIR_FILTER_BYPASS)
-            data[0] = self._REG_SET_BITS(
-                data[0], self.SET_IIR_P_POS, self.SET_IIR_P_WIDTH, self.IIR_FILTER_BYPASS)
-            self._write_holding_reg(self.REG_H_DSP_IIR, data)
-        else:
-            currMode = self._get_power_mode()
-            if currMode == self.DEEP_SLEEP_MODE:
-                return self.set_measure_mode(self.SLEEP_MODE)
-        return True
-
-    def _set_power_mode(self, mode):
-        '''!
-            @brief  Set the power mode of the sensor.
-            @param  mode: Power mode.
-            @n      SLEEP_MODE = 0x00,
-            @n      NORMAL_MODE = 0x01,
-            @n      SINGLE_SHOT_MODE = 0x02,
-            @n      CONTINOUS_MODE = 0x03,
-            @n      DEEP_SLEEP_MODE = 0x04,
-            @return True if configuration is successful, False otherwise.
-        '''
-        if mode not in (self.SLEEP_MODE, self.NORMAL_MODE, self.SINGLE_SHOT_MODE, self.CONTINOUS_MODE, self.DEEP_SLEEP_MODE):
-            return False
-        data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.DEEP_DIS_POS, self.DEEP_DIS_WIDTH, self.DEEP_DISABLE)
-        data[0] = self._REG_SET_BITS(
-            data[0], self.PWR_MODE_POS, self.PWR_MODE_WIDTH, mode)
-        self._write_holding_reg(self.REG_H_ODR_CONFIG, data)
-        return True
-
-    def _get_power_mode(self):
-        '''!
-            @brief  Get the power mode of the sensor.
-            @return Power mode.
-            @n      SLEEP_MODE = 0x00,
-            @n      NORMAL_MODE = 0x01,
-            @n      SINGLE_SHOT_MODE = 0x02,
-            @n      CONTINOUS_MODE = 0x03,
-            @n      DEEP_SLEEP_MODE = 0x04,
-        '''
-        data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-        currMode = self._REG_GET_BITS(
-            data[0], self.PWR_MODE_POS, self.PWR_MODE_WIDTH)
-        deep_dis = self._REG_GET_BITS(
-            data[0], self.DEEP_DIS_POS, self.DEEP_DIS_WIDTH)
-        if currMode == self.SLEEP_MODE and deep_dis == self.DEEP_ENABLE:
-            return self._verify_deep_standby_mode()
-        return currMode
-
-    def _verify_deep_standby_mode(self):
-        '''!
-            @brief  Verify the deep standby mode of the sensor.
-            @return True if the deep standby mode is verified, False otherwise.
-        '''
-        mode = self.SLEEP_MODE
-        data = self._read_holding_reg(self.REG_H_FIFO_SEL, 1)
-        fifo_frame_sel = self._REG_GET_BITS(
-            data[0], self.FIFO_FRAME_SEL_POS, self.FIFO_FRAME_SEL_WIDTH)
-
-        data = self._read_holding_reg(self.REG_H_ODR_CONFIG, 1)
-        odr = self._REG_GET_BITS(data[0], self.ODR_POS, self.ODR_WIDTH)
-
-        data = self._read_holding_reg(self.REG_H_DSP_IIR, 1)
-        iir_t = self._REG_GET_BITS(
-            data[0], self.SET_IIR_T_POS, self.SET_IIR_T_WIDTH)
-        iir_p = self._REG_GET_BITS(
-            data[0], self.SET_IIR_P_POS, self.SET_IIR_P_WIDTH)
-
-        if odr > self.ODR_05_HZ and fifo_frame_sel == self.FIFO_DISABLED and iir_t == self.IIR_FILTER_BYPASS and iir_p == self.IIR_FILTER_BYPASS:
-            mode = self.SLEEP_MODE
-        return mode
-
-    def _set_fifo_threshold(self, data, frame_sel, threshold):
-        '''!
-            @brief  Set the FIFO threshold of the sensor.
-            @param  data: Data to be set.
-            @param  frame_sel: Frame selection.
-            @param  threshold: Threshold.
-            @return Data to be set.
-        '''
-        if frame_sel == self.FIFO_TEMPERATURE_DATA or frame_sel == self.FIFO_PRESSURE_DATA:
-            if threshold <= 0x1F:
-                return self._REG_SET_BITS(data, self.FIFO_THRESHOLD_POS, self.FIFO_THRESHOLD_WIDTH, threshold)
-        elif frame_sel == self.FIFO_PRESS_TEMP_DATA:
-            if threshold <= 0x0F:
-                return self._REG_SET_BITS(data, self.FIFO_THRESHOLD_POS, self.FIFO_THRESHOLD_WIDTH, threshold)
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO2, 4)
+      if reg_data is None or len(reg_data) < 4:
+        logger.error("Read step counter failed")
         return 0
 
-    def _calculate_altitude(self, temperature_c, pressure_pa):
-        '''!
-            @brief  Calculate the altitude of the sensor.
-            @param  temperature_c: Temperature in Celsius.
-            @param  pressure_pa: Pressure in Pascal.
-            @return Altitude in meters.
-        '''
-        return (1.0 - (pressure_pa / 101325) ** 0.190284) * 44307.7
+      step_count = (reg_data[3] << 24) | (reg_data[2] << 16) | (reg_data[1] << 8) | reg_data[0]
 
-    def _REG_BIT_MASK(self, pos, width):
-        return ((1 << width) - 1) << pos
+      if step_count > 0xFFFF:
+        step_count = 0xFFFF
 
-    def _REG_SET_BITS(self, reg, pos, width, val):
-        cleared_reg = reg & ~self._REG_BIT_MASK(pos, width)
-        return cleared_reg | ((val & ((1 << width) - 1)) << pos)
+      return step_count
 
-    def _REG_GET_BITS(self, reg, pos, width):
-        return (reg >> pos) & ((1 << width) - 1)
+    except Exception as e:
+      logger.error("Read step counter failed: %s", str(e))
+      return 0
 
-    def convert_data(self, data):
-        '''!
-            @brief  Convert data to int.
-            @param  data: Data to be converted.
-            @return Converted data.
-        '''
-        byte0 = data[0] & 0xFF
-        byte1 = data[1] & 0xFF
-        byte2 = data[2] & 0xFF
+  def getIntStatus(self):
+    """Get interrupt status.
+    @details Read and combine interrupt status from both INT1 and INT2 pins. The return value is the OR combination of INT1 and INT2 status registers, allowing you to check all interrupt events regardless of which pin they are mapped to.
+    @return uint16_t Combined interrupt status register value (INT1 | INT2). Each bit represents a different interrupt type:
+    @n - BMI3_INT_STATUS_ANY_MOTION: Any motion detected
+    @n - BMI3_INT_STATUS_NO_MOTION: No motion detected
+    @n - BMI3_INT_STATUS_FLAT: Flat detection
+    @n - BMI3_INT_STATUS_ORIENTATION: Orientation change
+    @n - BMI3_INT_STATUS_STEP_DETECTOR: Step detected
+    @n - BMI3_INT_STATUS_SIG_MOTION: Significant motion detected
+    @n - BMI3_INT_STATUS_TILT: Tilt detected
+    @n - BMI3_INT_STATUS_TAP: Tap detected
+    """
+    if not self._initialized:
+      return 0
 
-        if byte2 & 0x80:
-            byte2_signed = byte2 - 0x100
-        else:
-            byte2_signed = byte2
+    try:
+      int_status = 0
 
-        data = (byte2_signed << 16) | (byte1 << 8) | byte0
-        return data
+      int1_data = self._read_regs(BMI3_REG_INT_STATUS_INT1, 2)
+      if int1_data and len(int1_data) >= 2:
+        int1_status = (int1_data[1] << 8) | int1_data[0]
+        int_status |= int1_status
 
-    def _write_holding_reg(self, reg, data):
-        pass
+      int2_data = self._read_regs(BMI3_REG_INT_STATUS_INT2, 2)
+      if int2_data and len(int2_data) >= 2:
+        int2_status = (int2_data[1] << 8) | int2_data[0]
+        int_status |= int2_status
 
-    def _read_input_reg(self, reg, size):
-        pass
+      return int_status
 
-    def _read_holding_reg(self, reg, size):
-        pass
+    except Exception as e:
+      logger.error("Failed to read interrupt status: %s", str(e))
+      return 0
 
+  def enableAnyMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+    """Configure any-motion threshold interrupt (using official structure parameters).
+    @param config Any-motion configuration structure (see bmi3_any_motion_config)
+    @n Parameter description:
+    @n - slope_thres: Acceleration slope threshold, range
+    @n 0-4095, unit 1.953mg/LSB (official example: 9 ≈ 17.6mg)
+    @n - hysteresis: Hysteresis value, range 0-1023, unit 1.953mg/LSB (official example: 5
+    @n ≈ 9.8mg)
+    @n - duration: Duration, range 0-8191, unit 20ms (official example: 9 = 180ms)
+    @n - acc_ref_up: Acceleration reference update mode, 0=OnEvent, 1=Always (official example: 1)
+    @n - wait_time: Wait time, range 0-7, unit 20ms (official example: 4-5 = 80-100ms)
+    @param pin Bound interrupt pin
+    @param axisMask Axis selection mask (default: eAxisXYZ)
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
 
-class DFRobot_BMP58X_I2C(DFRobot_BMP58X):
-    def __init__(self, bus, addr):
-        self.__addr = addr
-        self.__i2cbus = smbus.SMBus(bus)
-        super(DFRobot_BMP58X_I2C, self).__init__()
+    if config is None:
+      logger.error("Config is None")
+      return False
 
-    def _write_holding_reg(self, reg, data):
-        if isinstance(data, int):
-            data = [data]
-        ret = self.__i2cbus.write_i2c_block_data(self.__addr, reg, data)
-        time.sleep(0.002)
-        return ret
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
 
-    def _read_input_reg(self, reg, size):
-        return self.__i2cbus.read_i2c_block_data(self.__addr, reg, size)
+      if not self._setAnyMotionConfig(config):
+        logger.error("Set any-motion config failed")
+        return False
 
-    def _read_holding_reg(self, reg, size):
-        return self.__i2cbus.read_i2c_block_data(self.__addr, reg, size)
+      if not self._enableAnyMotionFeature(axisMask):
+        logger.error("Enable any-motion feature failed")
+        return False
 
+      if not self._mapInterrupt(pin, 'any_motion'):
+        logger.error("Map interrupt failed")
+        return False
 
-class DFRobot_BMP58X_SPI(DFRobot_BMP58X):
-    def __init__(self, cs=8, bus=0, dev=0, speed=8000000):
-        self.__cs = cs
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-        GPIO.setup(self.__cs, GPIO.OUT, initial=1)
-        GPIO.output(self.__cs, GPIO.LOW)
-        self.__spi = spidev.SpiDev()
-        self.__spi.open(bus, dev)
-        self.__spi.no_cs = True
-        self.__spi.max_speed_hz = speed
-        super(DFRobot_BMP58X_SPI, self).__init__()
+      logger.info("Any motion interrupt enabled: pin=%d, axisMask=0x%02X", pin, axisMask)
+      return True
 
-    def _write_reg(self, reg, data):
-        '''!
-          @brief writes data to a register
-          @param reg register address
-          @param data written data
-        '''
-        if isinstance(data, int):
-            data = [data]
-            # logger.info(data)
-        reg_addr = [reg & 0x7f]
-        GPIO.output(self.__cs, GPIO.LOW)
-        self.__spi.xfer(reg_addr)
-        self.__spi.xfer(data)
-        GPIO.output(self.__cs, GPIO.HIGH)
+    except Exception as e:
+      logger.error("Enable any-motion interrupt failed: %s", str(e))
+      return False
 
-    def _read_reg(self, reg, size):
-        '''!
-          @brief read the data from the register
-          @param reg register address
-          @param size read data length
-          @return read data list
-        '''
-        reg_addr = [reg | 0x80]
-        GPIO.output(self.__cs, GPIO.LOW)
-        # logger.info(reg_addr)
-        self.__spi.xfer(reg_addr)
-        time.sleep(0.01)
-        # self.__spi.readbytes(1)
-        rslt = self.__spi.readbytes(size)
-        GPIO.output(self.__cs, GPIO.HIGH)
+  def enableNoMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+    """Configure no-motion threshold interrupt (using official structure parameters).
+    @param config No-motion detection configuration structure (see bmi3_no_motion_config)
+    @n Parameter description:
+    @n - slope_thres: Acceleration slope threshold, range
+    @n 0-4095, unit 1.953mg/LSB (official example: 9 ≈ 17.6mg)
+    @n - hysteresis: Hysteresis value, range 0-1023, unit 1.953mg/LSB (official example: 5
+    @n ≈ 9.8mg)
+    @n - duration: Duration, range 0-8191, unit 20ms (official example: 9 = 180ms)
+    @n - acc_ref_up: Acceleration reference update mode, 0=OnEvent, 1=Always (official example: 1)
+    @n - wait_time: Wait time, range 0-7, unit 20ms (official example: 5 = 100ms)
+    @param pin Bound interrupt pin
+    @param axisMask Axis selection mask (default: eAxisXYZ)
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setNoMotionConfig(config):
+        logger.error("Set no-motion config failed")
+        return False
+
+      if not self._enableNoMotionFeature(axisMask):
+        logger.error("Enable no-motion feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'no_motion'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("No-motion interrupt enabled: pin=%d, axisMask=0x%02X", pin, axisMask)
+      return True
+
+    except Exception as e:
+      logger.error("Enable no-motion interrupt failed: %s", str(e))
+      return False
+
+  def enableSigMotionInt(self, config, pin):
+    """Configure significant motion detection interrupt (using official structure parameters).
+    @param config Significant motion configuration structure (see bmi3_sig_motion_config)
+    @n Parameter description:
+    @n - block_size: Detection segment size, range 0-65535 (official example: 200)
+    @n - peak_2_peak_min: Peak-to-peak acceleration minimum, range 0-1023 (official example: 30)
+    @n - peak_2_peak_max: Peak-to-peak acceleration maximum, range 0-1023 (official example: 30)
+    @n - mcr_min: Mean crossing rate per second minimum, range 0-62 (official example: 0x10 = 16)
+    @n - mcr_max: Mean crossing rate per second maximum, range 0-62 (official example: 0x10 = 16)
+    @param pin Bound interrupt pin
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setSigMotionConfig(config):
+        logger.error("Set sig-motion config failed")
+        return False
+
+      if not self._enableSigMotionFeature():
+        logger.error("Enable sig-motion feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'sig_motion'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("Sig-motion interrupt enabled: pin=%d", pin)
+      return True
+
+    except Exception as e:
+      logger.error("Enable sig-motion interrupt failed: %s", str(e))
+      return False
+
+  def enableFlatInt(self, config, pin):
+    """Configure flat detection interrupt (using official structure parameters).
+    @param config Flat detection configuration structure (see bmi3_flat_config)
+    @n Parameter description:
+    @n - theta: Maximum allowed tilt angle, range 0-63, angle calculated as 64 *
+    @n (tan(angle)^2) (official example: 9)
+    @n - blocking: Blocking mode, 0=MODE_0(disabled), 1=MODE_1(>1.5g),
+    @n 2=MODE_2(>1.5g or slope>half threshold), 3=MODE_3(>1.5g or slope>threshold) (official example: 3)
+    @n - hold_time: Minimum duration for device to maintain flat state, range 0-255, unit
+    @n 20ms (official example: 50 = 1000ms)
+    @n - hysteresis: Hysteresis angle for flat detection, range 0-255 (official example: 9)
+    @n - slope_thres: Minimum slope between consecutive acceleration samples, range 0-255 (official example: 0xCD
+    @n = 205)
+    @param pin Bound interrupt pin
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setFlatConfig(config):
+        logger.error("Set flat config failed")
+        return False
+
+      if not self._enableFlatFeature():
+        logger.error("Enable flat feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'flat'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("Flat interrupt enabled: pin=%d", pin)
+      return True
+
+    except Exception as e:
+      logger.error("Enable flat interrupt failed: %s", str(e))
+      return False
+
+  def enableOrientationInt(self, config, pin):
+    """Configure orientation detection interrupt (using official structure parameters).
+    @param config Orientation detection configuration structure (see bmi3_orientation_config)
+    @n Parameter description:
+    @n - ud_en: Whether to detect flip (face up/down), 0=disabled, 1=enabled (official example: 1)
+    @n - hold_time: Required duration for orientation change detection, range 0-255, unit 20ms (official example: 4 = 80ms)
+    @n - hysteresis: Hysteresis for orientation detection, range 0-255 (official example: 5)
+    @n - theta: Maximum allowed tilt angle, range 0-63, angle=64*(tan(angle)^2) (official example: 16)
+    @n - mode: Orientation detection mode, 0/3=symmetric, 1=high asymmetric, 2=low asymmetric (official example: 1)
+    @n - slope_thres: Slope threshold to prevent false detection due to violent motion, range 0-255 (official example: 30)
+    @n - blocking: Blocking mode, 0-3 (official example: 3)
+    @param pin Bound interrupt pin
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setOrientationConfig(config):
+        logger.error("Set orientation config failed")
+        return False
+
+      if not self._enableOrientationFeature():
+        logger.error("Enable orientation feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'orientation'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("Orientation interrupt enabled: pin=%d", pin)
+      return True
+
+    except Exception as e:
+      logger.error("Enable orientation interrupt failed: %s", str(e))
+      return False
+
+  def readOrientation(self):
+    """Read orientation detection output.
+    @return tuple (portraitLandscape, faceUpDown) or (None, None) on failure
+    @n portraitLandscape: Portrait/Landscape status
+    @n - 0: Portrait Upright
+    @n - 1: Landscape Left
+    @n - 2: Portrait Upside Down
+    @n - 3: Landscape Right
+    @n faceUpDown: Face up/down status
+    @n - 0: Face Up
+    @n - 1: Face Down
+    @retval (portraitLandscape, faceUpDown) Read successful
+    @retval (None, None) Read failed or feature not enabled
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return (None, None)
+
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_EVENT_EXT, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read orientation data failed")
+        return (None, None)
+
+      portrait_landscape = reg_data[0] & BMI3_ORIENTATION_PORTRAIT_LANDSCAPE_MASK
+
+      face_up_down = (reg_data[0] & BMI3_ORIENTATION_FACEUP_DOWN_MASK) >> BMI3_ORIENTATION_FACEUP_DOWN_POS
+
+      return (portrait_landscape, face_up_down)
+
+    except Exception as e:
+      logger.error("Read orientation data failed: %s", str(e))
+      return (None, None)
+
+  def enableTapInt(self, config, pin, enableSingle=True, enableDouble=True, enableTriple=True):
+    """Configure tap detection interrupt (using official structure parameters).
+    @param config Tap detection configuration structure (see bmi3_tap_detector_config)
+    @n Key parameters (refer to tap.c):
+    @n - axis_sel: Select axis for tap detection (0=X, 1=Y, 2=Z)
+    @n - mode: Detection mode (0=sensitive, 1=normal, 2=robust)
+    @n - tap_peak_thres / tap_shock_settling_dur etc. for timing/amplitude thresholds to determine tap
+    @param pin Bound interrupt pin
+    @param enableSingle Whether to enable single tap detection (default true)
+    @param enableDouble Whether to enable double tap detection (default true)
+    @param enableTriple Whether to enable triple tap detection (default true)
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setTapConfig(config):
+        logger.error("Set tap config failed")
+        return False
+
+      if not self._enableTapFeature(enableSingle, enableDouble, enableTriple):
+        logger.error("Enable tap feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'tap'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("Tap interrupt enabled: pin=%d, single=%d, double=%d, triple=%d", pin, enableSingle, enableDouble, enableTriple)
+      return True
+
+    except Exception as e:
+      logger.error("Enable tap interrupt failed: %s", str(e))
+      return False
+
+  def readTapStatus(self):
+    """Read tap detection status (single/double/triple tap).
+    @return uint8_t Output mask (can combine BMI3_TAP_DET_STATUS_SINGLE/DOUBLE/TRIPLE), 0 on failure
+    @retval Bitmask Read successful
+    @retval 0 Read failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return 0
+
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_EVENT_EXT, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read tap status failed")
+        return 0
+
+      tap_mask = reg_data[0] & (BMI3_TAP_DET_STATUS_SINGLE | BMI3_TAP_DET_STATUS_DOUBLE | BMI3_TAP_DET_STATUS_TRIPLE)
+
+      return tap_mask
+
+    except Exception as e:
+      logger.error("Read tap status failed: %s", str(e))
+      return 0
+
+  def enableTiltInt(self, config, pin):
+    """Configure tilt detection interrupt (using official structure parameters).
+    @param config Tilt detection configuration structure (see bmi3_tilt_config)
+    @n Key parameters (refer to tilt.c):
+    @n - segment_size: Time window for averaging reference vector, range 0-255
+    @n - min_tilt_angle: Minimum tilt angle to exceed, range 0-255, angle=256*cos(angle)
+    @n - beta_acc_mean: Low-pass averaging coefficient, range 0-65535
+    @param pin Bound interrupt pin
+    @return bool type, indicates the configuration status
+    @retval True Configuration successful
+    @retval False Configuration failed
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return False
+
+    if config is None:
+      logger.error("Config is None")
+      return False
+
+    try:
+      if not self._configureIntPin(pin):
+        logger.error("Configure interrupt pin failed")
+        return False
+
+      if not self._setTiltConfig(config):
+        logger.error("Set tilt config failed")
+        return False
+
+      if not self._enableTiltFeature():
+        logger.error("Enable tilt feature failed")
+        return False
+
+      if not self._mapInterrupt(pin, 'tilt'):
+        logger.error("Map interrupt failed")
+        return False
+
+      logger.info("Tilt interrupt enabled: pin=%d", pin)
+      return True
+
+    except Exception as e:
+      logger.error("Enable tilt interrupt failed: %s", str(e))
+      return False
+
+  def write_reg(self, reg, value):
+    """Write data to register (public helper)."""
+    try:
+      if isinstance(value, list):
+        self.i2cbus.write_i2c_block_data(self.i2c_addr, reg, value)
+      else:
+        self.i2cbus.write_byte_data(self.i2c_addr, reg, value)
+      self._delay_us(2)
+    except Exception as e:
+      logger.error("Write reg failed: reg=0x%02X, error=%s", reg, str(e))
+      raise
+
+  def read_reg(self, reg, length=1):
+    """Read register (public helper)."""
+    return self._read_regs(reg, length)
+
+  def _write_regs(self, reg_addr, data):
+    """Internal: write one or more bytes."""
+    try:
+      if len(data) == 1:
+        self.i2cbus.write_byte_data(self.i2c_addr, reg_addr, data[0])
+      else:
+        self.i2cbus.write_i2c_block_data(self.i2c_addr, reg_addr, data)
+      self._delay_us(2)
+      return BMI323_OK
+    except Exception as e:
+      logger.error("Write regs failed: reg=0x%02X, error=%s", reg_addr, str(e))
+      return BMI323_E_COM_FAIL
+
+  def _read_regs(self, reg_addr, length):
+    """Internal: read registers (handles I2C dummy bytes)."""
+    try:
+      total_length = length + self._dummy_byte
+      data = self.i2cbus.read_i2c_block_data(self.i2c_addr, reg_addr, total_length)
+      self._delay_us(2)
+      if len(data) >= total_length:
+        return data[self._dummy_byte : self._dummy_byte + length]
+      elif len(data) >= length:
+        logger.warning("Short read (expect %d, got %d), assuming no dummy bytes", total_length, len(data))
+        return data[:length]
+      else:
+        logger.error("Read length too short: expect >=%d, got %d", length, len(data))
+        return None
+    except Exception as e:
+      logger.error("Read regs failed: reg=0x%02X, error=%s", reg_addr, str(e))
+      return None
+
+  def _delay_us(self, period):
+    """Delay in microseconds."""
+    time.sleep(period / 1000000.0)
+
+  def _delay_ms(self, period):
+    """Delay in milliseconds."""
+    time.sleep(period / 1000.0)
+
+  def _lsb_to_g(self, val, g_range):
+    half_scale = 32768.0
+    return (val * g_range) / half_scale
+
+  def _lsb_to_dps(self, val, dps_range):
+    half_scale = 32768.0
+    return (val * dps_range) / half_scale
+
+  def _int16_from_bytes(self, low_byte, high_byte):
+    """Build int16 from two bytes (little endian)."""
+    value = (high_byte << 8) | low_byte
+    if value & 0x8000:
+      value = value - 0x10000
+    return value
+
+  def _soft_reset(self):
+    """Internal: perform soft reset and enable feature engine."""
+    try:
+      # Step 1: send soft-reset command (0xDEAF, low byte first)
+      cmd_data = [0xAF, 0xDE]
+      rslt = self._write_regs(BMI3_REG_CMD, cmd_data)
+      if rslt != BMI323_OK:
         return rslt
 
-    def _write_holding_reg(self, reg, data):
-        if isinstance(data, int):
-            data = [data]
-        idx = 0
-        for val in data:
-            self._write_reg(reg + idx, val)
-            idx += 1
+      # Step 2: wait for reset
+      self._delay_us(BMI3_SOFT_RESET_DELAY_US)
 
-    def _read_input_reg(self, reg, size):
-        return self._read_reg(reg, size)
+      # Step 3: configure feature engine registers
+      feature_io2_data = [0x2C, 0x01]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO2, feature_io2_data)
+      if rslt != BMI323_OK:
+        return rslt
 
-    def _read_holding_reg(self, reg, size):
-        return self._read_reg(reg, size)
+      feature_io_status_data = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, feature_io_status_data)
+      if rslt != BMI323_OK:
+        return rslt
 
+      # Enable feature engine
+      feature_ctrl_data = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_CTRL, feature_ctrl_data)
+      if rslt != BMI323_OK:
+        return rslt
 
-class DFRobot_BMP58X_UART(DFRobot_BMP58X, DFRobot_RTU):
-    def __init__(self, baud, addr):
-        self.__baud = baud
-        self.__addr = addr
-        DFRobot_BMP58X.__init__(self)
-        DFRobot_RTU.__init__(self, baud, 8, 'N', 1)
-    def set_baud(self, baud):
-        '''!
-          @fn setBaud
-          @brief Set the UART communication baud rate.
-          @details Configures the serial communication speed using the specified baud rate enum.
-                   This function initializes the necessary hardware registers to achieve the desired
-                   data transfer rate.
-          @param baud An eBaud enum value specifying the desired baud rate.
-                      Defaults to e9600 if not explicitly set.
-          @note Actual hardware configuration may vary depending on the microcontroller model.
-                The function assumes a standard clock frequency; adjust clock settings
-                if using non-default system clock configurations.
-          @warning Changing the baud rate during communication may cause data loss
-                   or communication errors if both devices are not synchronized.
-          @see eBaud for available baud rate options:
-               - BAUD_2400: 2400 bits per second
-               - BAUD_4800: 4800 bits per second
-               - BAUD_9600: 9600 bits per second (default)
-               - BAUD_14400: 14400 bits per second
-               - BAUD_19200: 19200 bits per second
-               - BAUD_38400: 38400 bits per second
-               - BAUD_57600: 57600 bits per second
-               - BAUD_115200: 115200 bits per second
-        '''
-        baud = baud & 0xFF
-        self.write_holding_register(self.__addr, self.REG_H_MODBUS_BAUD, baud)
+      # Step 4: poll until feature engine enabled (max 10 attempts)
+      loop = 0
+      max_loops = 10
+      while loop < max_loops:
+        self._delay_us(100000)  # 100 ms
+        reg_data = self._read_regs(BMI3_REG_FEATURE_IO1, 2)
+        if reg_data is None or len(reg_data) < 2:
+          loop += 1
+          continue
 
-    def _write_holding_reg(self, reg, data):
-        if isinstance(data, int):
-            data = [data]
-        tmp_data = []
-        for i in data:
-            tmp_data.append((i >> 8) & 0xFF)
-            tmp_data.append(i & 0xFF)
-        ret = self.write_holding_registers(self.__addr, reg + self.OFFSET_REG, tmp_data)
-        return ret
+        if (reg_data[0] & BMI3_FEATURE_ENGINE_ENABLE_MASK) != 0:
+          logger.info("Feature engine enabled (loop %d)", loop + 1)
+          return BMI323_OK
 
-    def _read_input_reg(self, reg, size):
-        try:
-            data = self.read_input_registers(self.__addr, reg + self.OFFSET_REG, size)
-            ret_data = []
-            for i in range(size):
-                ret_data.append((data[i*2+1] << 8) | data[i*2+2])
-            return ret_data
-        except Exception as e:
-            return [0]
+        loop += 1
 
-    def _read_holding_reg(self, reg, size):
-        try:
-            data = self.read_holding_registers(self.__addr, reg + self.OFFSET_REG, size)
-            ret_data = []
-            for i in range(size):
-                ret_data.append((data[i*2+1] << 8) | data[i*2+2])
-            return ret_data
-        except Exception as e:
-            return [0]
+      logger.error("Feature engine enable timeout")
+      return BMI323_E_FEATURE_ENGINE_STATUS
+
+    except Exception as e:
+      logger.error("Soft reset failed: %s", str(e))
+      return BMI323_E_COM_FAIL
+
+  def _enable_feature_engine(self):
+    """Internal: feature engine already enabled in _soft_reset."""
+    return BMI323_OK
+
+  def is_initialized(self):
+    """Return True if sensor is initialized."""
+    return self._initialized
+
+  def get_chip_id(self):
+    """Return chip ID."""
+    return self._chip_id
+
+  def _configureIntPin(self, pin):
+    """Internal: configure interrupt pin."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_IO_INT_CTRL, 3)
+      if reg_data is None or len(reg_data) < 3:
+        logger.error("Read int pin config failed")
+        return False
+
+      if pin == eInt_t.eINT1:
+        reg_data[0] = (reg_data[0] & ~BMI3_INT1_LVL_MASK) | (BMI3_ENABLE & BMI3_INT1_LVL_MASK)
+        reg_data[0] = (reg_data[0] & ~BMI3_INT1_OD_MASK) | ((BMI3_DISABLE << BMI3_INT1_OD_POS) & BMI3_INT1_OD_MASK)
+        reg_data[0] = (reg_data[0] & ~BMI3_INT1_OUTPUT_EN_MASK) | ((BMI3_ENABLE << BMI3_INT1_OUTPUT_EN_POS) & BMI3_INT1_OUTPUT_EN_MASK)
+      elif pin == eInt_t.eINT2:
+        reg_value = (reg_data[1] << 8) | reg_data[0]
+        reg_value = (reg_value & ~BMI3_INT2_LVL_MASK) | ((BMI3_ENABLE << BMI3_INT2_LVL_POS) & BMI3_INT2_LVL_MASK)
+        reg_value = (reg_value & ~BMI3_INT2_OD_MASK) | ((BMI3_DISABLE << BMI3_INT2_OD_POS) & BMI3_INT2_OD_MASK)
+        reg_value = (reg_value & ~BMI3_INT2_OUTPUT_EN_MASK) | ((BMI3_ENABLE << BMI3_INT2_OUTPUT_EN_POS) & BMI3_INT2_OUTPUT_EN_MASK)
+        reg_data[1] = (reg_value >> 8) & 0xFF
+        reg_data[0] = reg_value & 0xFF
+      else:
+        logger.error("Invalid interrupt pin: %d", pin)
+        return False
+
+      rslt = self._write_regs(BMI3_REG_IO_INT_CTRL, reg_data[:2])
+      if rslt != BMI323_OK:
+        return False
+
+      return True
+
+    except Exception as e:
+      logger.error("Configure interrupt pin failed: %s", str(e))
+      return False
+
+  def _setAnyMotionConfig(self, config):
+    """Internal: set any-motion config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_ANY_MOTION, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      any_mot_config = [0] * 6
+
+      any_mot_config[0] = config.slope_thres & 0xFF
+
+      threshold_16bit = (any_mot_config[1] << 8) | any_mot_config[0]
+      threshold_16bit = (threshold_16bit & ~BMI3_ANY_NO_SLOPE_THRESHOLD_MASK) | (config.slope_thres & BMI3_ANY_NO_SLOPE_THRESHOLD_MASK)
+      any_mot_config[1] = (threshold_16bit & BMI3_ANY_NO_SLOPE_THRESHOLD_MASK) >> 8
+
+      acc_ref_up_16bit = any_mot_config[1] << 8
+      acc_ref_up_16bit = (acc_ref_up_16bit & ~BMI3_ANY_NO_ACC_REF_UP_MASK) | ((config.acc_ref_up << BMI3_ANY_NO_ACC_REF_UP_POS) & BMI3_ANY_NO_ACC_REF_UP_MASK)
+      any_mot_config[1] |= (acc_ref_up_16bit & BMI3_ANY_NO_ACC_REF_UP_MASK) >> 8
+
+      any_mot_config[2] = config.hysteresis & 0xFF
+
+      hysteresis_16bit = (any_mot_config[3] << 8) | any_mot_config[2]
+      hysteresis_16bit = (hysteresis_16bit & ~BMI3_ANY_NO_HYSTERESIS_MASK) | (config.hysteresis & BMI3_ANY_NO_HYSTERESIS_MASK)
+      any_mot_config[3] = (hysteresis_16bit & BMI3_ANY_NO_HYSTERESIS_MASK) >> 8
+
+      any_mot_config[4] = config.duration & 0xFF
+
+      duration_16bit = (any_mot_config[5] << 8) | any_mot_config[4]
+      duration_16bit = (duration_16bit & ~BMI3_ANY_NO_DURATION_MASK) | (config.duration & BMI3_ANY_NO_DURATION_MASK)
+      any_mot_config[5] = (duration_16bit & BMI3_ANY_NO_DURATION_MASK) >> 8
+
+      wait_time_16bit = any_mot_config[5] << 8
+      wait_time_16bit = (wait_time_16bit & ~BMI3_ANY_NO_WAIT_TIME_MASK) | ((config.wait_time << BMI3_ANY_NO_WAIT_TIME_POS) & BMI3_ANY_NO_WAIT_TIME_MASK)
+      any_mot_config[5] |= (wait_time_16bit & BMI3_ANY_NO_WAIT_TIME_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, any_mot_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set any-motion config failed: %s", str(e))
+      return False
+
+  def _enableAnyMotionFeature(self, axisMask):
+    """Internal: enable any-motion feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~(BMI3_ANY_MOTION_X_EN_MASK | BMI3_ANY_MOTION_Y_EN_MASK | BMI3_ANY_MOTION_Z_EN_MASK)
+      if axisMask & eAxis_t.eAxisX:
+        feature_value |= BMI3_ENABLE << BMI3_ANY_MOTION_X_EN_POS
+      if axisMask & eAxis_t.eAxisY:
+        feature_value |= BMI3_ENABLE << BMI3_ANY_MOTION_Y_EN_POS
+      if axisMask & eAxis_t.eAxisZ:
+        feature_value |= BMI3_ENABLE << BMI3_ANY_MOTION_Z_EN_POS
+
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable any-motion feature failed: %s", str(e))
+      return False
+
+  def _mapInterrupt(self, pin, interrupt_type):
+    """Internal: map interrupt to pin."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_INT_MAP1, 4)
+      if reg_data is None or len(reg_data) < 4:
+        logger.error("Read interrupt map failed")
+        return False
+
+      pin_value = BMI3_INT1 if (pin == eInt_t.eINT1) else BMI3_INT2
+
+      if interrupt_type == 'any_motion':
+        reg_data[0] = (reg_data[0] & ~BMI3_ANY_MOTION_OUT_MASK) | ((pin_value << BMI3_ANY_MOTION_OUT_POS) & BMI3_ANY_MOTION_OUT_MASK)
+      elif interrupt_type == 'no_motion':
+        reg_data[0] = (reg_data[0] & ~BMI3_NO_MOTION_OUT_MASK) | ((pin_value << BMI3_NO_MOTION_OUT_POS) & BMI3_NO_MOTION_OUT_MASK)
+      elif interrupt_type == 'step_detector':
+        temp_value = (reg_data[1] << 8) | reg_data[0]
+        temp_value = (temp_value & ~BMI3_STEP_DETECTOR_OUT_MASK) | ((pin_value << BMI3_STEP_DETECTOR_OUT_POS) & BMI3_STEP_DETECTOR_OUT_MASK)
+        reg_data[1] = (temp_value >> 8) & 0xFF
+        reg_data[0] = temp_value & 0xFF
+      elif interrupt_type == 'flat':
+        reg_data[0] = (reg_data[0] & ~BMI3_FLAT_OUT_MASK) | ((pin_value << BMI3_FLAT_OUT_POS) & BMI3_FLAT_OUT_MASK)
+      elif interrupt_type == 'orientation':
+        reg_data[0] = (reg_data[0] & ~BMI3_ORIENTATION_OUT_MASK) | ((pin_value << BMI3_ORIENTATION_OUT_POS) & BMI3_ORIENTATION_OUT_MASK)
+      elif interrupt_type == 'tilt':
+        temp_value = (reg_data[1] << 8) | reg_data[0]
+        temp_value = (temp_value & ~BMI3_TILT_OUT_MASK) | ((pin_value << BMI3_TILT_OUT_POS) & BMI3_TILT_OUT_MASK)
+        reg_data[1] = (temp_value >> 8) & 0xFF
+        reg_data[0] = temp_value & 0xFF
+      elif interrupt_type == 'tap':
+        reg_data[2] = (reg_data[2] & ~BMI3_TAP_OUT_MASK) | ((pin_value << BMI3_TAP_OUT_POS) & BMI3_TAP_OUT_MASK)
+      elif interrupt_type == 'sig_motion':
+        temp_value = (reg_data[1] << 8) | reg_data[0]
+        temp_value = (temp_value & ~BMI3_SIG_MOTION_OUT_MASK) | ((pin_value << BMI3_SIG_MOTION_OUT_POS) & BMI3_SIG_MOTION_OUT_MASK)
+        reg_data[1] = (temp_value >> 8) & 0xFF
+        reg_data[0] = temp_value & 0xFF
+
+      rslt = self._write_regs(BMI3_REG_INT_MAP1, reg_data)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Map interrupt failed: %s", str(e))
+      return False
+
+  def _setNoMotionConfig(self, config):
+    """Internal: set no-motion config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_NO_MOTION, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      no_mot_config = [0] * 6
+
+      no_mot_config[0] = config.slope_thres & 0xFF
+
+      threshold_16bit = (no_mot_config[1] << 8) | no_mot_config[0]
+      threshold_16bit = (threshold_16bit & ~BMI3_ANY_NO_SLOPE_THRESHOLD_MASK) | (config.slope_thres & BMI3_ANY_NO_SLOPE_THRESHOLD_MASK)
+      no_mot_config[1] = (threshold_16bit & BMI3_ANY_NO_SLOPE_THRESHOLD_MASK) >> 8
+
+      acc_ref_up_16bit = no_mot_config[1] << 8
+      acc_ref_up_16bit = (acc_ref_up_16bit & ~BMI3_ANY_NO_ACC_REF_UP_MASK) | ((config.acc_ref_up << BMI3_ANY_NO_ACC_REF_UP_POS) & BMI3_ANY_NO_ACC_REF_UP_MASK)
+      no_mot_config[1] |= (acc_ref_up_16bit & BMI3_ANY_NO_ACC_REF_UP_MASK) >> 8
+
+      no_mot_config[2] = config.hysteresis & 0xFF
+
+      hysteresis_16bit = (no_mot_config[3] << 8) | no_mot_config[2]
+      hysteresis_16bit = (hysteresis_16bit & ~BMI3_ANY_NO_HYSTERESIS_MASK) | (config.hysteresis & BMI3_ANY_NO_HYSTERESIS_MASK)
+      no_mot_config[3] = (hysteresis_16bit & BMI3_ANY_NO_HYSTERESIS_MASK) >> 8
+
+      no_mot_config[4] = config.duration & 0xFF
+
+      duration_16bit = (no_mot_config[5] << 8) | no_mot_config[4]
+      duration_16bit = (duration_16bit & ~BMI3_ANY_NO_DURATION_MASK) | (config.duration & BMI3_ANY_NO_DURATION_MASK)
+      no_mot_config[5] = (duration_16bit & BMI3_ANY_NO_DURATION_MASK) >> 8
+
+      wait_time_16bit = no_mot_config[5] << 8
+      wait_time_16bit = (wait_time_16bit & ~BMI3_ANY_NO_WAIT_TIME_MASK) | ((config.wait_time << BMI3_ANY_NO_WAIT_TIME_POS) & BMI3_ANY_NO_WAIT_TIME_MASK)
+      no_mot_config[5] |= (wait_time_16bit & BMI3_ANY_NO_WAIT_TIME_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, no_mot_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set no-motion config failed: %s", str(e))
+      return False
+
+  def _enableNoMotionFeature(self, axisMask):
+    """Internal: enable no-motion feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~(BMI3_NO_MOTION_X_EN_MASK | BMI3_NO_MOTION_Y_EN_MASK | BMI3_NO_MOTION_Z_EN_MASK)
+      if axisMask & eAxis_t.eAxisX:
+        feature_value |= BMI3_ENABLE << BMI3_NO_MOTION_X_EN_POS
+      if axisMask & eAxis_t.eAxisY:
+        feature_value |= BMI3_ENABLE << BMI3_NO_MOTION_Y_EN_POS
+      if axisMask & eAxis_t.eAxisZ:
+        feature_value |= BMI3_ENABLE << BMI3_NO_MOTION_Z_EN_POS
+
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable no-motion feature failed: %s", str(e))
+      return False
+
+  def _setSigMotionConfig(self, config):
+    """Internal: set significant-motion config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_SIG_MOTION, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      sig_mot_config = [0] * 6
+
+      sig_mot_config[0] = config.block_size & 0xFF
+      sig_mot_config[1] = (config.block_size >> 8) & 0xFF
+
+      sig_mot_config[2] = config.peak_2_peak_min & 0xFF
+
+      p2p_min_16bit = (sig_mot_config[3] << 8) | sig_mot_config[2]
+      p2p_min_16bit = (p2p_min_16bit & ~BMI3_SIG_P2P_MIN_MASK) | (config.peak_2_peak_min & BMI3_SIG_P2P_MIN_MASK)
+      sig_mot_config[3] = (p2p_min_16bit & BMI3_SIG_P2P_MIN_MASK) >> 8
+
+      mcr_min_16bit = sig_mot_config[3] << 8
+      mcr_min_16bit = (mcr_min_16bit & ~BMI3_SIG_MCR_MIN_MASK) | ((config.mcr_min << BMI3_SIG_MCR_MIN_POS) & BMI3_SIG_MCR_MIN_MASK)
+      sig_mot_config[3] |= (mcr_min_16bit & BMI3_SIG_MCR_MIN_MASK) >> 8
+
+      sig_mot_config[4] = config.peak_2_peak_max & 0xFF
+
+      p2p_max_16bit = (sig_mot_config[5] << 8) | sig_mot_config[4]
+      p2p_max_16bit = (p2p_max_16bit & ~BMI3_SIG_P2P_MAX_MASK) | (config.peak_2_peak_max & BMI3_SIG_P2P_MAX_MASK)
+      sig_mot_config[5] = (p2p_max_16bit & BMI3_SIG_P2P_MAX_MASK) >> 8
+
+      mcr_max_16bit = sig_mot_config[5] << 8
+      mcr_max_16bit = (mcr_max_16bit & ~BMI3_MCR_MAX_MASK) | ((config.mcr_max << BMI3_MCR_MAX_POS) & BMI3_MCR_MAX_MASK)
+      sig_mot_config[5] |= (mcr_max_16bit & BMI3_MCR_MAX_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, sig_mot_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set sig-motion config failed: %s", str(e))
+      return False
+
+  def _enableSigMotionFeature(self):
+    """Internal: enable sig-motion feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~BMI3_SIG_MOTION_EN_MASK
+      feature_value |= (BMI3_ENABLE << BMI3_SIG_MOTION_EN_POS) & BMI3_SIG_MOTION_EN_MASK
+
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable sig-motion feature failed: %s", str(e))
+      return False
+
+  def _setFlatConfig(self, config):
+    """Internal: set flat config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_FLAT, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      flat_config = [0] * 4
+
+      flat_config[0] = config.theta & BMI3_FLAT_THETA_MASK
+
+      flat_config[0] |= (config.blocking << BMI3_FLAT_BLOCKING_POS) & BMI3_FLAT_BLOCKING_MASK
+
+      holdtime_16bit = flat_config[1] << 8
+      holdtime_16bit = (holdtime_16bit & ~BMI3_FLAT_HOLD_TIME_MASK) | ((config.hold_time << BMI3_FLAT_HOLD_TIME_POS) & BMI3_FLAT_HOLD_TIME_MASK)
+      flat_config[1] = (holdtime_16bit & BMI3_FLAT_HOLD_TIME_MASK) >> 8
+
+      flat_config[2] = config.slope_thres & BMI3_FLAT_SLOPE_THRES_MASK
+
+      hyst_16bit = flat_config[3] << 8
+      hyst_16bit = (hyst_16bit & ~BMI3_FLAT_HYST_MASK) | ((config.hysteresis << BMI3_FLAT_HYST_POS) & BMI3_FLAT_HYST_MASK)
+      flat_config[3] = (hyst_16bit & BMI3_FLAT_HYST_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, flat_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set flat config failed: %s", str(e))
+      return False
+
+  def _enableFlatFeature(self):
+    """Internal: enable flat feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~BMI3_FLAT_EN_MASK
+      feature_value |= (BMI3_ENABLE << BMI3_FLAT_EN_POS) & BMI3_FLAT_EN_MASK
+
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable flat feature failed: %s", str(e))
+      return False
+
+  def _setOrientationConfig(self, config):
+    """Internal: set orientation config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_ORIENT, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      orient_config = [0] * 4
+
+      orient_config[0] = config.ud_en & BMI3_ORIENT_UD_EN_MASK
+
+      orient_config[0] |= (config.mode << BMI3_ORIENT_MODE_POS) & BMI3_ORIENT_MODE_MASK
+
+      orient_config[0] |= (config.blocking << BMI3_ORIENT_BLOCKING_POS) & BMI3_ORIENT_BLOCKING_MASK
+
+      orient_config[0] |= (config.theta << BMI3_ORIENT_THETA_POS) & 0xE0
+
+      theta_16bit = orient_config[1] << 8
+      theta_16bit = (theta_16bit & ~BMI3_ORIENT_THETA_MASK) | ((config.theta << BMI3_ORIENT_THETA_POS) & BMI3_ORIENT_THETA_MASK)
+      orient_config[1] = (theta_16bit & BMI3_ORIENT_THETA_MASK) >> 8
+
+      hold_time_16bit = orient_config[1] << 8
+      hold_time_16bit = (hold_time_16bit & ~BMI3_ORIENT_HOLD_TIME_MASK) | ((config.hold_time << BMI3_ORIENT_HOLD_TIME_POS) & BMI3_ORIENT_HOLD_TIME_MASK)
+      orient_config[1] |= (hold_time_16bit & BMI3_ORIENT_HOLD_TIME_MASK) >> 8
+
+      orient_config[2] = config.slope_thres & BMI3_ORIENT_SLOPE_THRES_MASK
+
+      hyst_16bit = orient_config[3] << 8
+      hyst_16bit = (hyst_16bit & ~BMI3_ORIENT_HYST_MASK) | ((config.hysteresis << BMI3_ORIENT_HYST_POS) & BMI3_ORIENT_HYST_MASK)
+      orient_config[3] = (hyst_16bit & BMI3_ORIENT_HYST_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, orient_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set orientation config failed: %s", str(e))
+      return False
+
+  def _enableOrientationFeature(self):
+    """Internal: enable orientation feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~BMI3_ORIENTATION_EN_MASK
+      feature_value |= (BMI3_ENABLE << BMI3_ORIENTATION_EN_POS) & BMI3_ORIENTATION_EN_MASK
+
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable orientation feature failed: %s", str(e))
+      return False
+
+  def _setTapConfig(self, config):
+    """Internal: set tap config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_TAP, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      tap_config = [0] * 6
+
+      tap_config[0] = config.axis_sel & BMI3_TAP_AXIS_SEL_MASK
+
+      tap_config[0] |= (config.wait_for_timeout << BMI3_TAP_WAIT_FR_TIME_OUT_POS) & BMI3_TAP_WAIT_FR_TIME_OUT_MASK
+
+      tap_config[0] |= (config.max_peaks_for_tap << BMI3_TAP_MAX_PEAKS_POS) & BMI3_TAP_MAX_PEAKS_MASK
+
+      tap_config[0] |= (config.mode << BMI3_TAP_MODE_POS) & BMI3_TAP_MODE_MASK
+
+      tap_config[2] = config.tap_peak_thres & 0xFF
+
+      peak_thres_16bit = (tap_config[3] << 8) | tap_config[2]
+      peak_thres_16bit = (peak_thres_16bit & ~BMI3_TAP_PEAK_THRES_MASK) | (config.tap_peak_thres & BMI3_TAP_PEAK_THRES_MASK)
+      tap_config[3] = (peak_thres_16bit & BMI3_TAP_PEAK_THRES_MASK) >> 8
+
+      max_gest_dur_16bit = tap_config[3] << 8
+      max_gest_dur_16bit = (max_gest_dur_16bit & ~BMI3_TAP_MAX_GEST_DUR_MASK) | ((config.max_gest_dur << BMI3_TAP_MAX_GEST_DUR_POS) & BMI3_TAP_MAX_GEST_DUR_MASK)
+      tap_config[3] |= (max_gest_dur_16bit & BMI3_TAP_MAX_GEST_DUR_MASK) >> 8
+
+      tap_config[4] = config.max_dur_between_peaks & BMI3_TAP_MAX_DUR_BW_PEAKS_MASK
+
+      tap_config[4] |= (config.tap_shock_settling_dur << BMI3_TAP_SHOCK_SETT_DUR_POS) & BMI3_TAP_SHOCK_SETT_DUR_MASK
+
+      min_quite_16bit = tap_config[5] << 8
+      min_quite_16bit = (min_quite_16bit & ~BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_MASK) | ((config.min_quite_dur_between_taps << BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_POS) & BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_MASK)
+      tap_config[5] = (min_quite_16bit & BMI3_TAP_MIN_QUITE_DUR_BW_TAPS_MASK) >> 8
+
+      quite_time_16bit = tap_config[5] << 8
+      quite_time_16bit = (quite_time_16bit & ~BMI3_TAP_QUITE_TIME_AFTR_GEST_MASK) | ((config.quite_time_after_gest << BMI3_TAP_QUITE_TIME_AFTR_GEST_POS) & BMI3_TAP_QUITE_TIME_AFTR_GEST_MASK)
+      tap_config[5] |= (quite_time_16bit & BMI3_TAP_QUITE_TIME_AFTR_GEST_MASK) >> 8
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, tap_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set tap config failed: %s", str(e))
+      return False
+
+  def _enableTapFeature(self, enableSingle, enableDouble, enableTriple):
+    """Internal: enable tap feature (single/double/triple)."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_16bit = (reg_data[1] << 8) | reg_data[0]
+      feature_16bit &= ~(BMI3_TAP_DETECTOR_S_TAP_EN_MASK | BMI3_TAP_DETECTOR_D_TAP_EN_MASK | BMI3_TAP_DETECTOR_T_TAP_EN_MASK)
+      if enableSingle:
+        feature_16bit |= (BMI3_ENABLE << BMI3_TAP_DETECTOR_S_TAP_EN_POS) & BMI3_TAP_DETECTOR_S_TAP_EN_MASK
+      if enableDouble:
+        feature_16bit |= (BMI3_ENABLE << BMI3_TAP_DETECTOR_D_TAP_EN_POS) & BMI3_TAP_DETECTOR_D_TAP_EN_MASK
+      if enableTriple:
+        feature_16bit |= (BMI3_ENABLE << BMI3_TAP_DETECTOR_T_TAP_EN_POS) & BMI3_TAP_DETECTOR_T_TAP_EN_MASK
+
+      feature_data = [feature_16bit & 0xFF, (feature_16bit >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable tap feature failed: %s", str(e))
+      return False
+
+  def _setTiltConfig(self, config):
+    """Internal: set tilt config via feature engine."""
+    try:
+      base_addr = [BMI3_BASE_ADDR_TILT, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_ADDR, base_addr)
+      if rslt != BMI323_OK:
+        return False
+
+      tilt_config = [0] * 4
+
+      value16 = (tilt_config[1] << 8) | tilt_config[0]
+      value16 = (value16 & ~BMI3_TILT_SEGMENT_SIZE_MASK) | (config.segment_size & BMI3_TILT_SEGMENT_SIZE_MASK)
+      value16 = (value16 & ~BMI3_TILT_MIN_TILT_ANGLE_MASK) | ((config.min_tilt_angle << BMI3_TILT_MIN_TILT_ANGLE_POS) & BMI3_TILT_MIN_TILT_ANGLE_MASK)
+      tilt_config[0] = value16 & 0xFF
+      tilt_config[1] = (value16 >> 8) & 0xFF
+
+      beta_val = config.beta_acc_mean & BMI3_TILT_BETA_ACC_MEAN_MASK
+      tilt_config[2] = beta_val & 0xFF
+      tilt_config[3] = (beta_val >> 8) & 0xFF
+
+      rslt = self._write_regs(BMI3_REG_FEATURE_DATA_TX, tilt_config)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Set tilt config failed: %s", str(e))
+      return False
+
+  def _enableTiltFeature(self):
+    """Internal: enable tilt feature."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_value = (reg_data[1] << 8) | reg_data[0]
+      feature_value &= ~BMI3_TILT_EN_MASK
+      feature_value |= (BMI3_ENABLE << BMI3_TILT_EN_POS) & BMI3_TILT_EN_MASK
+      feature_data = [feature_value & 0xFF, (feature_value >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable tilt feature failed: %s", str(e))
+      return False
+
+  def _enableStepCounterFeature(self):
+    """Internal: enable step_counter and step_detector features."""
+    try:
+      reg_data = self._read_regs(BMI3_REG_FEATURE_IO0, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read Feature IO0 failed")
+        return False
+
+      feature_16bit = (reg_data[1] << 8) | reg_data[0]
+      feature_16bit &= ~(BMI3_STEP_DETECTOR_EN_MASK | BMI3_STEP_COUNTER_EN_MASK)
+      feature_16bit |= (BMI3_ENABLE << BMI3_STEP_DETECTOR_EN_POS) & BMI3_STEP_DETECTOR_EN_MASK
+      feature_16bit |= (BMI3_ENABLE << BMI3_STEP_COUNTER_EN_POS) & BMI3_STEP_COUNTER_EN_MASK
+
+      feature_data = [feature_16bit & 0xFF, (feature_16bit >> 8) & 0xFF]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO0, feature_data)
+      if rslt != BMI323_OK:
+        return False
+
+      gp_status = [0x01, 0x00]
+      rslt = self._write_regs(BMI3_REG_FEATURE_IO_STATUS, gp_status)
+      return rslt == BMI323_OK
+
+    except Exception as e:
+      logger.error("Enable step_counter feature failed: %s", str(e))
+      return False

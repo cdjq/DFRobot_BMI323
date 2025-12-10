@@ -1,60 +1,60 @@
-/**
- * @file  DFRobot_BMI323.cpp
- * @brief 定义DFRobot_BMI323类的基础结构
- * @n     这是一个6轴IMU传感器（加速度计+陀螺仪），可以通过I2C接口进行控制。
- * @n     BMI323具有多种运动检测功能，如计步器、任意运动检测、静止检测、敲击检测等。
- * @n     这些功能使得BMI323传感器在可穿戴设备、智能设备等应用中非常有用。
- * @n     同样，BMI323具有中断引脚，可以在不使用软件算法的情况下以节能方式使用。
- * @copyright   Copyright (c) 2024 DFRobot Co.Ltd (http://www.dfrobot.com)
- * @license     The MIT License (MIT)
- * @author      DFRobot
- * @version     V1.0.0
- * @date        2024-01-01
- * @url         https://github.com/DFRobot/DFRobot_BMI323
+/*!
+ * @file DFRobot_BMI323.cpp
+ * @brief Define the basic structure of DFRobot_BMI323 class, implementation of basic methods
+ * @copyright Copyright (c) 2025 DFRobot Co.Ltd (http://www.dfrobot.com)
+ * @license The MIT License (MIT)
+ * @author [Martin](Martin@dfrobot.com)
+ * @version V1.0.0
+ * @date 2025-12-08
+ * @url https://github.com/DFRobot/DFRobot_BMI323
  */
 
 #include "DFRobot_BMI323.h"
+
 #include <string.h>
 
-// 静态回调函数需要访问实例，使用全局指针（简化实现）
-static DFRobot_BMI323* g_bmi323_instance = NULL;
+// Static callback functions need to access instance, use global pointer (simplified implementation)
+static DFRobot_BMI323 *g_bmi323_instance = NULL;
 
-// ========== 构造函数和析构函数 ==========
+// ========== Constructor and Destructor ==========
 
-DFRobot_BMI323::DFRobot_BMI323(TwoWire *wire, uint8_t i2cAddr) {
-  _wire = wire;
+DFRobot_BMI323::DFRobot_BMI323(TwoWire *wire, uint8_t i2cAddr)
+{
+  _wire        = wire;
   _initialized = false;
-  _accelRange = 2.0f;
-  _gyroRange = 250.0f;
-  _i2cAddr = i2cAddr;
+  _accelRange  = 2.0f;
+  _gyroRange   = 250.0f;
+  _i2cAddr     = i2cAddr;
   memset(&_dev, 0, sizeof(_dev));
   memset(&_intMapConfig, 0, sizeof(_intMapConfig));
   memset(&_featureEnable, 0, sizeof(_featureEnable));
   _intPinConfigured[0] = false;
   _intPinConfigured[1] = false;
-  g_bmi323_instance = this;
+  g_bmi323_instance    = this;
 }
 
-DFRobot_BMI323::~DFRobot_BMI323() {
+DFRobot_BMI323::~DFRobot_BMI323()
+{
   if (g_bmi323_instance == this) {
     g_bmi323_instance = NULL;
   }
 }
 
-// ========== 初始化函数 ==========
+// ========== Initialization Functions ==========
 
-bool DFRobot_BMI323::begin(void) {
+bool DFRobot_BMI323::begin(void)
+{
   if (_initialized) {
     return true;
   }
 
-  // 初始化接口
+  // Initialize interface
   int8_t rslt = _initInterface();
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 初始化BMI323
+  // Initialize BMI323
   rslt = bmi323_init(&_dev);
   if (rslt != BMI323_OK) {
     return false;
@@ -64,173 +64,245 @@ bool DFRobot_BMI323::begin(void) {
   return true;
 }
 
-int8_t DFRobot_BMI323::_initInterface(void) {
-  // I2C接口初始化
+int8_t DFRobot_BMI323::_initInterface(void)
+{
+  // I2C interface initialization
   _wire->begin();
-  
-  _dev.intf = BMI3_I2C_INTF;
-  _dev.read = _i2cReadCallback;
-  _dev.write = _i2cWriteCallback;
-  _dev.intf_ptr = &_i2cAddr;
+
+  _dev.intf           = BMI3_I2C_INTF;
+  _dev.read           = _i2cReadCallback;
+  _dev.write          = _i2cWriteCallback;
+  _dev.intf_ptr       = &_i2cAddr;
   _dev.read_write_len = 8;
-  
-  // 设置延时函数
+
+  // Set delay function
   _dev.delay_us = _delayUsCallback;
-  
+
   return BMI323_OK;
 }
 
-// ========== I2C读写函数 ==========
+// ========== I2C Read/Write Functions ==========
 
-int8_t DFRobot_BMI323::_i2cRead(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
+int8_t DFRobot_BMI323::_i2cRead(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr)
+{
   (void)intf_ptr;
-  
+
   _wire->beginTransmission(_i2cAddr);
   _wire->write(reg_addr);
   if (_wire->endTransmission() != 0) {
     return BMI323_E_COM_FAIL;
   }
-  
+
   _wire->requestFrom(_i2cAddr, (uint8_t)len);
   uint32_t index = 0;
   while (_wire->available() && index < len) {
     reg_data[index++] = _wire->read();
   }
-  
+
   if (index != len) {
     return BMI323_E_COM_FAIL;
   }
-  
+
   return BMI323_OK;
 }
 
-int8_t DFRobot_BMI323::_i2cWrite(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr) {
+int8_t DFRobot_BMI323::_i2cWrite(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr)
+{
   (void)intf_ptr;
-  
+
   _wire->beginTransmission(_i2cAddr);
   _wire->write(reg_addr);
   for (uint32_t i = 0; i < len; i++) {
     _wire->write(reg_data[i]);
   }
-  
+
   if (_wire->endTransmission() != 0) {
     return BMI323_E_COM_FAIL;
   }
-  
+
   return BMI323_OK;
 }
 
-// ========== 延时函数 ==========
+// ========== Delay Functions ==========
 
-void DFRobot_BMI323::_delayUs(uint32_t period, void *intf_ptr) {
+void DFRobot_BMI323::_delayUs(uint32_t period, void *intf_ptr)
+{
   (void)intf_ptr;
   delayMicroseconds(period);
 }
 
-// ========== 静态回调函数 ==========
+// ========== Static Callback Functions ==========
 
-int8_t DFRobot_BMI323::_i2cReadCallback(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
+int8_t DFRobot_BMI323::_i2cReadCallback(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr)
+{
   if (g_bmi323_instance == NULL) {
     return BMI323_E_NULL_PTR;
   }
   return g_bmi323_instance->_i2cRead(reg_addr, reg_data, len, intf_ptr);
 }
 
-int8_t DFRobot_BMI323::_i2cWriteCallback(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr) {
+int8_t DFRobot_BMI323::_i2cWriteCallback(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr)
+{
   if (g_bmi323_instance == NULL) {
     return BMI323_E_NULL_PTR;
   }
   return g_bmi323_instance->_i2cWrite(reg_addr, reg_data, len, intf_ptr);
 }
 
-void DFRobot_BMI323::_delayUsCallback(uint32_t period, void *intf_ptr) {
+void DFRobot_BMI323::_delayUsCallback(uint32_t period, void *intf_ptr)
+{
   if (g_bmi323_instance != NULL) {
     g_bmi323_instance->_delayUs(period, intf_ptr);
   }
 }
 
-// ========== 加速度计功能 ==========
+// ========== Accelerometer Functions ==========
 
-bool DFRobot_BMI323::configAccel(eAccelODR_t odr, eAccelRange_t range) {
+bool DFRobot_BMI323::configAccel(eAccelODR_t odr, eAccelRange_t range, eAccelMode_t mode)
+{
   if (!_initialized) {
     return false;
   }
 
   struct bmi3_sens_config config;
   config.type = BMI323_ACCEL;
-  
+
   int8_t rslt = bmi323_get_sensor_config(&config, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  config.cfg.acc.odr = (uint8_t)odr;
+  switch (mode) {
+    case eAccelModeLowPower:
+      config.cfg.acc.acc_mode = BMI3_ACC_MODE_LOW_PWR;
+      config.cfg.acc.avg_num  = BMI3_ACC_AVG2;
+      config.cfg.acc.bwp      = BMI3_ACC_BW_ODR_HALF;
+      break;
+    case eAccelModeNormal:
+      config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;
+      config.cfg.acc.avg_num  = BMI3_ACC_AVG1;
+      config.cfg.acc.bwp      = BMI3_ACC_BW_ODR_HALF;
+      break;
+    case eAccelModeHighPerf:
+      config.cfg.acc.acc_mode = BMI3_ACC_MODE_HIGH_PERF;
+      config.cfg.acc.avg_num  = BMI3_ACC_AVG1;
+      config.cfg.acc.bwp      = BMI3_ACC_BW_ODR_QUARTER;
+      break;
+    default:
+      config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;
+      config.cfg.acc.avg_num  = BMI3_ACC_AVG1;
+      config.cfg.acc.bwp      = BMI3_ACC_BW_ODR_HALF;
+      break;
+  }
+
+  config.cfg.acc.odr   = (uint8_t)odr;
   config.cfg.acc.range = (uint8_t)range;
-  config.cfg.acc.bwp = BMI3_ACC_BW_ODR_QUARTER;
-  config.cfg.acc.avg_num = BMI3_ACC_AVG64;
-  config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;
 
   rslt = bmi323_set_sensor_config(&config, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 保存量程用于单位转换
+  // Save range for unit conversion
   switch (range) {
-    case eAccelRange2G: _accelRange = 2.0f; break;
-    case eAccelRange4G: _accelRange = 4.0f; break;
-    case eAccelRange8G: _accelRange = 8.0f; break;
-    case eAccelRange16G: _accelRange = 16.0f; break;
-    default: _accelRange = 2.0f; break;
+    case eAccelRange2G:
+      _accelRange = 2.0f;
+      break;
+    case eAccelRange4G:
+      _accelRange = 4.0f;
+      break;
+    case eAccelRange8G:
+      _accelRange = 8.0f;
+      break;
+    case eAccelRange16G:
+      _accelRange = 16.0f;
+      break;
+    default:
+      _accelRange = 2.0f;
+      break;
   }
 
   return true;
 }
 
-bool DFRobot_BMI323::configGyro(eGyroODR_t odr, eGyroRange_t range) {
+bool DFRobot_BMI323::configGyro(eGyroODR_t odr, eGyroRange_t range, eGyroMode_t mode)
+{
   if (!_initialized) {
     return false;
   }
 
   struct bmi3_sens_config config;
   config.type = BMI323_GYRO;
-  
+
   int8_t rslt = bmi323_get_sensor_config(&config, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  config.cfg.gyr.odr = (uint8_t)odr;
+  switch (mode) {
+    case eGyroModeLowPower:
+      config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_LOW_PWR;
+      config.cfg.gyr.avg_num  = BMI3_GYR_AVG2;
+      config.cfg.gyr.bwp      = BMI3_GYR_BW_ODR_HALF;
+      break;
+    case eGyroModeNormal:
+      config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;
+      config.cfg.gyr.avg_num  = BMI3_GYR_AVG1;
+      config.cfg.gyr.bwp      = BMI3_GYR_BW_ODR_HALF;
+      break;
+    case eGyroModeHighPerf:
+      config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_HIGH_PERF;
+      config.cfg.gyr.avg_num  = BMI3_GYR_AVG1;
+      config.cfg.gyr.bwp      = BMI3_GYR_BW_ODR_QUARTER;
+      break;
+    default:
+      config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;
+      config.cfg.gyr.avg_num  = BMI3_GYR_AVG1;
+      config.cfg.gyr.bwp      = BMI3_GYR_BW_ODR_HALF;
+      break;
+  }
+
+  config.cfg.gyr.odr   = (uint8_t)odr;
   config.cfg.gyr.range = (uint8_t)range;
-  config.cfg.gyr.bwp = BMI3_GYR_BW_ODR_QUARTER;
-  config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;
-  config.cfg.gyr.avg_num = BMI3_GYR_AVG1;
 
   rslt = bmi323_set_sensor_config(&config, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 保存量程用于单位转换
+  // Save range for unit conversion
   switch (range) {
-    case eGyroRange125DPS: _gyroRange = 125.0f; break;
-    case eGyroRange250DPS: _gyroRange = 250.0f; break;
-    case eGyroRange500DPS: _gyroRange = 500.0f; break;
-    case eGyroRange1000DPS: _gyroRange = 1000.0f; break;
-    case eGyroRange2000DPS: _gyroRange = 2000.0f; break;
-    default: _gyroRange = 250.0f; break;
+    case eGyroRange125DPS:
+      _gyroRange = 125.0f;
+      break;
+    case eGyroRange250DPS:
+      _gyroRange = 250.0f;
+      break;
+    case eGyroRange500DPS:
+      _gyroRange = 500.0f;
+      break;
+    case eGyroRange1000DPS:
+      _gyroRange = 1000.0f;
+      break;
+    case eGyroRange2000DPS:
+      _gyroRange = 2000.0f;
+      break;
+    default:
+      _gyroRange = 250.0f;
+      break;
   }
 
   return true;
 }
 
-bool DFRobot_BMI323::readAccelGyro(sSensorData *accel, sSensorData *gyro) {
+bool DFRobot_BMI323::getAccelGyroData(sSensorData *accel, sSensorData *gyro)
+{
   if (!_initialized || accel == NULL || gyro == NULL) {
     return false;
   }
 
   int16_t raw[6] = { 0 };
-  if (getAccelGyroData(raw) != BMI3_OK) {
+  if (getSensorRawData(raw) != BMI3_OK) {
     return false;
   }
 
@@ -245,9 +317,10 @@ bool DFRobot_BMI323::readAccelGyro(sSensorData *accel, sSensorData *gyro) {
   return true;
 }
 
-// ========== 运动检测功能 ==========
+// ========== Motion Detection Functions ==========
 
-int8_t DFRobot_BMI323::readStepCounter(uint16_t *stepVal) {
+int8_t DFRobot_BMI323::readStepCounter(uint16_t *stepVal)
+{
   if (stepVal == NULL) {
     return BMI3_E_NULL_PTR;
   }
@@ -267,30 +340,31 @@ int8_t DFRobot_BMI323::readStepCounter(uint16_t *stepVal) {
   }
 
   uint32_t steps = sensor_data.sens_data.step_counter_output;
-  *stepVal = (steps > 0xFFFFU) ? 0xFFFFU : (uint16_t)steps;
+  *stepVal       = (steps > 0xFFFFU) ? 0xFFFFU : (uint16_t)steps;
 
   return BMI3_OK;
 }
 
-bool DFRobot_BMI323::enableStepCounterInterrupt(eInterruptSource_t pin) {
+bool DFRobot_BMI323::enableStepCounterInt(eInt_t pin)
+{
   if (!_initialized) {
     return false;
   }
 
-  // 启用计步器和步检测器功能
-  _featureEnable.step_counter_en = BMI3_ENABLE;
+  // Enable step counter and step detector features
+  _featureEnable.step_counter_en  = BMI3_ENABLE;
   _featureEnable.step_detector_en = BMI3_ENABLE;
   if (!_applyFeatureEnable()) {
     return false;
   }
 
-  // 配置中断引脚
+  // Configure interrupt pin
   if (!_configureIntPin(pin)) {
     return false;
   }
 
-  // 映射中断到指定引脚
-  uint8_t mapValue = _encodeIntPin(pin);
+  // Map interrupt to specified pin
+  uint8_t mapValue                = _encodeIntPin(pin);
   _intMapConfig.step_detector_out = mapValue;
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
     return false;
@@ -299,7 +373,8 @@ bool DFRobot_BMI323::enableStepCounterInterrupt(eInterruptSource_t pin) {
   return true;
 }
 
-int8_t DFRobot_BMI323::getAccelData(int16_t *data) {
+int8_t DFRobot_BMI323::getAccelData(int16_t *data)
+{
   if ((data == NULL) || !_initialized) {
     return BMI3_E_NULL_PTR;
   }
@@ -318,7 +393,8 @@ int8_t DFRobot_BMI323::getAccelData(int16_t *data) {
   return rslt;
 }
 
-int8_t DFRobot_BMI323::getGyroData(int16_t *data) {
+int8_t DFRobot_BMI323::getGyroData(int16_t *data)
+{
   if ((data == NULL) || !_initialized) {
     return BMI3_E_NULL_PTR;
   }
@@ -337,7 +413,8 @@ int8_t DFRobot_BMI323::getGyroData(int16_t *data) {
   return rslt;
 }
 
-int8_t DFRobot_BMI323::getAccelGyroData(int16_t *data) {
+int8_t DFRobot_BMI323::getSensorRawData(int16_t *data)
+{
   if ((data == NULL) || !_initialized) {
     return BMI3_E_NULL_PTR;
   }
@@ -351,24 +428,25 @@ int8_t DFRobot_BMI323::getAccelGyroData(int16_t *data) {
   return rslt;
 }
 
-// ========== 中断功能 ==========
+// ========== Interrupt Functions ==========
 
-uint16_t DFRobot_BMI323::getInterruptStatus(void) {
+uint16_t DFRobot_BMI323::getIntStatus(void)
+{
   if (!_initialized) {
     return 0;
   }
 
-  uint16_t int_status = 0;
+  uint16_t int_status  = 0;
   uint16_t int1_status = 0;
   uint16_t int2_status = 0;
 
-  // 读取 INT1 状态
+  // Read INT1 status
   int8_t rslt1 = bmi323_get_int1_status(&int1_status, &_dev);
-  // 读取 INT2 状态
+  // Read INT2 status
   int8_t rslt2 = bmi323_get_int2_status(&int2_status, &_dev);
 
-  // 合并两个中断引脚的状态（使用 OR 操作）
-  // 这样无论中断映射到哪个引脚，都能正确读取到状态
+  // Merge status of both interrupt pins (using OR operation)
+  // This ensures correct status reading regardless of which pin the interrupt is mapped to
   if (rslt1 == BMI323_OK || rslt2 == BMI323_OK) {
     int_status = int1_status | int2_status;
   }
@@ -376,15 +454,18 @@ uint16_t DFRobot_BMI323::getInterruptStatus(void) {
   return int_status;
 }
 
-bool DFRobot_BMI323::enableAnyMotionInterrupt(const struct bmi3_any_motion_config &config, eInterruptSource_t pin, uint8_t axisMask) {
+bool DFRobot_BMI323::enableAnyMotionInt(const struct bmi3_any_motion_config &config, eInt_t pin, uint8_t axisMask)
+{
   return _configureMotionInterrupt(true, &config, nullptr, pin, axisMask);
 }
 
-bool DFRobot_BMI323::enableNoMotionInterrupt(const struct bmi3_no_motion_config &config, eInterruptSource_t pin, uint8_t axisMask) {
+bool DFRobot_BMI323::enableNoMotionInt(const struct bmi3_no_motion_config &config, eInt_t pin, uint8_t axisMask)
+{
   return _configureMotionInterrupt(false, nullptr, &config, pin, axisMask);
 }
 
-bool DFRobot_BMI323::enableSigMotionInterrupt(const struct bmi3_sig_motion_config &config, eInterruptSource_t pin) {
+bool DFRobot_BMI323::enableSigMotionInt(const struct bmi3_sig_motion_config &config, eInt_t pin)
+{
   if (!_initialized) {
     return false;
   }
@@ -394,14 +475,14 @@ bool DFRobot_BMI323::enableSigMotionInterrupt(const struct bmi3_sig_motion_confi
   }
 
   struct bmi3_sens_config sensConfig = { 0 };
-  sensConfig.type = BMI323_SIG_MOTION;
+  sensConfig.type                    = BMI323_SIG_MOTION;
 
   int8_t rslt = bmi323_get_sensor_config(&sensConfig, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 直接使用用户提供的配置结构体
+  // Directly use user-provided configuration structure
   sensConfig.cfg.sig_motion = config;
 
   rslt = bmi323_set_sensor_config(&sensConfig, 1, &_dev);
@@ -409,14 +490,14 @@ bool DFRobot_BMI323::enableSigMotionInterrupt(const struct bmi3_sig_motion_confi
     return false;
   }
 
-  // 启用显著运动检测功能
+  // Enable significant motion detection feature
   _featureEnable.sig_motion_en = BMI3_ENABLE;
   if (!_applyFeatureEnable()) {
     return false;
   }
 
-  // 映射中断到指定引脚
-  uint8_t mapValue = _encodeIntPin(pin);
+  // Map interrupt to specified pin
+  uint8_t mapValue             = _encodeIntPin(pin);
   _intMapConfig.sig_motion_out = mapValue;
 
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
@@ -426,7 +507,8 @@ bool DFRobot_BMI323::enableSigMotionInterrupt(const struct bmi3_sig_motion_confi
   return true;
 }
 
-bool DFRobot_BMI323::enableFlatInterrupt(const struct bmi3_flat_config &config, eInterruptSource_t pin) {
+bool DFRobot_BMI323::enableFlatInt(const struct bmi3_flat_config &config, eInt_t pin)
+{
   if (!_initialized) {
     return false;
   }
@@ -436,14 +518,14 @@ bool DFRobot_BMI323::enableFlatInterrupt(const struct bmi3_flat_config &config, 
   }
 
   struct bmi3_sens_config sensConfig = { 0 };
-  sensConfig.type = BMI323_FLAT;
+  sensConfig.type                    = BMI323_FLAT;
 
   int8_t rslt = bmi323_get_sensor_config(&sensConfig, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 直接使用用户提供的配置结构体
+  // Directly use user-provided configuration structure
   sensConfig.cfg.flat = config;
 
   rslt = bmi323_set_sensor_config(&sensConfig, 1, &_dev);
@@ -451,14 +533,14 @@ bool DFRobot_BMI323::enableFlatInterrupt(const struct bmi3_flat_config &config, 
     return false;
   }
 
-  // 启用平面检测功能
+  // Enable flat detection feature
   _featureEnable.flat_en = BMI3_ENABLE;
   if (!_applyFeatureEnable()) {
     return false;
   }
 
-  // 映射中断到指定引脚
-  uint8_t mapValue = _encodeIntPin(pin);
+  // Map interrupt to specified pin
+  uint8_t mapValue       = _encodeIntPin(pin);
   _intMapConfig.flat_out = mapValue;
 
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
@@ -468,7 +550,8 @@ bool DFRobot_BMI323::enableFlatInterrupt(const struct bmi3_flat_config &config, 
   return true;
 }
 
-bool DFRobot_BMI323::enableOrientationInterrupt(const struct bmi3_orientation_config &config, eInterruptSource_t pin) {
+bool DFRobot_BMI323::enableOrientationInt(const struct bmi3_orientation_config &config, eInt_t pin)
+{
   if (!_initialized) {
     return false;
   }
@@ -478,14 +561,14 @@ bool DFRobot_BMI323::enableOrientationInterrupt(const struct bmi3_orientation_co
   }
 
   struct bmi3_sens_config sensConfig = { 0 };
-  sensConfig.type = BMI323_ORIENTATION;
+  sensConfig.type                    = BMI323_ORIENTATION;
 
   int8_t rslt = bmi323_get_sensor_config(&sensConfig, 1, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  // 直接使用用户提供的配置结构体
+  // Directly use user-provided configuration structure
   sensConfig.cfg.orientation = config;
 
   rslt = bmi323_set_sensor_config(&sensConfig, 1, &_dev);
@@ -493,14 +576,14 @@ bool DFRobot_BMI323::enableOrientationInterrupt(const struct bmi3_orientation_co
     return false;
   }
 
-  // 启用方向检测功能
+  // Enable orientation detection feature
   _featureEnable.orientation_en = BMI3_ENABLE;
   if (!_applyFeatureEnable()) {
     return false;
   }
 
-  // 映射中断到指定引脚
-  uint8_t mapValue = _encodeIntPin(pin);
+  // Map interrupt to specified pin
+  uint8_t mapValue              = _encodeIntPin(pin);
   _intMapConfig.orientation_out = mapValue;
 
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
@@ -510,7 +593,8 @@ bool DFRobot_BMI323::enableOrientationInterrupt(const struct bmi3_orientation_co
   return true;
 }
 
-bool DFRobot_BMI323::readOrientation(uint8_t *portraitLandscape, uint8_t *faceUpDown) {
+bool DFRobot_BMI323::readOrientation(uint8_t *portraitLandscape, uint8_t *faceUpDown)
+{
   if (!_initialized) {
     return false;
   }
@@ -535,8 +619,8 @@ bool DFRobot_BMI323::readOrientation(uint8_t *portraitLandscape, uint8_t *faceUp
   return true;
 }
 
-bool DFRobot_BMI323::enableTapInterrupt(const struct bmi3_tap_detector_config &config, eInterruptSource_t pin,
-                                        bool enableSingle, bool enableDouble, bool enableTriple) {
+bool DFRobot_BMI323::enableTapInt(const struct bmi3_tap_detector_config &config, eInt_t pin, bool enableSingle, bool enableDouble, bool enableTriple)
+{
   if (!_initialized) {
     return false;
   }
@@ -546,7 +630,7 @@ bool DFRobot_BMI323::enableTapInterrupt(const struct bmi3_tap_detector_config &c
   }
 
   struct bmi3_sens_config sensConfig = { 0 };
-  sensConfig.type = BMI323_TAP;
+  sensConfig.type                    = BMI323_TAP;
 
   int8_t rslt = bmi323_get_sensor_config(&sensConfig, 1, &_dev);
   if (rslt != BMI323_OK) {
@@ -568,7 +652,7 @@ bool DFRobot_BMI323::enableTapInterrupt(const struct bmi3_tap_detector_config &c
     return false;
   }
 
-  uint8_t mapValue = _encodeIntPin(pin);
+  uint8_t mapValue      = _encodeIntPin(pin);
   _intMapConfig.tap_out = mapValue;
 
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
@@ -578,23 +662,24 @@ bool DFRobot_BMI323::enableTapInterrupt(const struct bmi3_tap_detector_config &c
   return true;
 }
 
-bool DFRobot_BMI323::readTapStatus(uint8_t *tapMask) {
+bool DFRobot_BMI323::readTapStatus(uint8_t *tapMask)
+{
   if (!_initialized || (tapMask == NULL)) {
     return false;
   }
 
   uint8_t data[2] = { 0 };
-  int8_t rslt = bmi323_get_regs(BMI3_REG_FEATURE_EVENT_EXT, data, 2, &_dev);
+  int8_t  rslt    = bmi323_get_regs(BMI3_REG_FEATURE_EVENT_EXT, data, 2, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
 
-  *tapMask = data[0] &
-             (BMI3_TAP_DET_STATUS_SINGLE | BMI3_TAP_DET_STATUS_DOUBLE | BMI3_TAP_DET_STATUS_TRIPLE);
+  *tapMask = data[0] & (BMI3_TAP_DET_STATUS_SINGLE | BMI3_TAP_DET_STATUS_DOUBLE | BMI3_TAP_DET_STATUS_TRIPLE);
   return true;
 }
 
-bool DFRobot_BMI323::enableTiltInterrupt(const struct bmi3_tilt_config &config, eInterruptSource_t pin) {
+bool DFRobot_BMI323::enableTiltInt(const struct bmi3_tilt_config &config, eInt_t pin)
+{
   if (!_initialized) {
     return false;
   }
@@ -604,7 +689,7 @@ bool DFRobot_BMI323::enableTiltInterrupt(const struct bmi3_tilt_config &config, 
   }
 
   struct bmi3_sens_config sensConfig = { 0 };
-  sensConfig.type = BMI323_TILT;
+  sensConfig.type                    = BMI323_TILT;
 
   int8_t rslt = bmi323_get_sensor_config(&sensConfig, 1, &_dev);
   if (rslt != BMI323_OK) {
@@ -623,7 +708,7 @@ bool DFRobot_BMI323::enableTiltInterrupt(const struct bmi3_tilt_config &config, 
     return false;
   }
 
-  uint8_t mapValue = _encodeIntPin(pin);
+  uint8_t mapValue       = _encodeIntPin(pin);
   _intMapConfig.tilt_out = mapValue;
   if (bmi323_map_interrupt(_intMapConfig, &_dev) != BMI323_OK) {
     return false;
@@ -632,23 +717,26 @@ bool DFRobot_BMI323::enableTiltInterrupt(const struct bmi3_tilt_config &config, 
   return true;
 }
 
-// ========== 单位转换函数 ==========
+// ========== Unit Conversion Functions ==========
 
-float DFRobot_BMI323::_lsbToG(int16_t val, float g_range) {
-  // 16位分辨率
+float DFRobot_BMI323::_lsbToG(int16_t val, float g_range)
+{
+  // 16-bit resolution
   float half_scale = 32768.0f;
   return (val * g_range) / half_scale;
 }
 
-float DFRobot_BMI323::_lsbToDps(int16_t val, float dps_range) {
-  // 16位分辨率
+float DFRobot_BMI323::_lsbToDps(int16_t val, float dps_range)
+{
+  // 16-bit resolution
   float half_scale = 32768.0f;
   return (val * dps_range) / half_scale;
 }
 
-bool DFRobot_BMI323::_readVector(uint8_t sensor_type, sSensorData *data, float range, bool isAccel) {
+bool DFRobot_BMI323::_readVector(uint8_t sensor_type, sSensorData *data, float range, bool isAccel)
+{
   struct bmi3_sensor_data sensor_data = { 0 };
-  sensor_data.type = sensor_type;
+  sensor_data.type                    = sensor_type;
 
   int8_t rslt = bmi323_get_sensor_data(&sensor_data, 1, &_dev);
   if (rslt != BMI323_OK) {
@@ -668,10 +756,8 @@ bool DFRobot_BMI323::_readVector(uint8_t sensor_type, sSensorData *data, float r
   return true;
 }
 
-bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion, 
-                                                const struct bmi3_any_motion_config *anyConfig,
-                                                const struct bmi3_no_motion_config *noConfig,
-                                                eInterruptSource_t pin, uint8_t axisMask) {
+bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion, const struct bmi3_any_motion_config *anyConfig, const struct bmi3_no_motion_config *noConfig, eInt_t pin, uint8_t axisMask)
+{
   if (!_initialized) {
     return false;
   }
@@ -681,7 +767,7 @@ bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion,
   }
 
   struct bmi3_sens_config config = { 0 };
-  config.type = anyMotion ? BMI323_ANY_MOTION : BMI323_NO_MOTION;
+  config.type                    = anyMotion ? BMI323_ANY_MOTION : BMI323_NO_MOTION;
 
   int8_t rslt = bmi323_get_sensor_config(&config, 1, &_dev);
   if (rslt != BMI323_OK) {
@@ -692,13 +778,13 @@ bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion,
     if (anyConfig == nullptr) {
       return false;
     }
-    // 直接使用用户提供的配置结构体
+    // Directly use user-provided configuration structure
     config.cfg.any_motion = *anyConfig;
   } else {
     if (noConfig == nullptr) {
       return false;
     }
-    // 直接使用用户提供的配置结构体
+    // Directly use user-provided configuration structure
     config.cfg.no_motion = *noConfig;
   }
 
@@ -739,7 +825,8 @@ bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion,
   return true;
 }
 
-bool DFRobot_BMI323::_configureIntPin(eInterruptSource_t pin) {
+bool DFRobot_BMI323::_configureIntPin(eInt_t pin)
+{
   uint8_t idx = (pin == eINT1) ? 0 : 1;
   if (_intPinConfigured[idx]) {
     return true;
@@ -747,16 +834,16 @@ bool DFRobot_BMI323::_configureIntPin(eInterruptSource_t pin) {
 
   struct bmi3_int_pin_config config;
   memset(&config, 0, sizeof(config));
-  config.pin_type = (pin == eINT1) ? BMI3_INT1 : BMI3_INT2;
+  config.pin_type  = (pin == eINT1) ? BMI3_INT1 : BMI3_INT2;
   config.int_latch = BMI3_DISABLE;
 
   if (pin == eINT1) {
-    config.pin_cfg[0].lvl = BMI3_ENABLE;       // Active high
-    config.pin_cfg[0].od = BMI3_DISABLE;       // Push-pull
-    config.pin_cfg[0].output_en = BMI3_ENABLE; // Enable output
+    config.pin_cfg[0].lvl       = BMI3_ENABLE;     // Active high
+    config.pin_cfg[0].od        = BMI3_DISABLE;    // Push-pull
+    config.pin_cfg[0].output_en = BMI3_ENABLE;     // Enable output
   } else {
-    config.pin_cfg[1].lvl = BMI3_ENABLE;
-    config.pin_cfg[1].od = BMI3_DISABLE;
+    config.pin_cfg[1].lvl       = BMI3_ENABLE;
+    config.pin_cfg[1].od        = BMI3_DISABLE;
     config.pin_cfg[1].output_en = BMI3_ENABLE;
   }
 
@@ -769,11 +856,13 @@ bool DFRobot_BMI323::_configureIntPin(eInterruptSource_t pin) {
   return false;
 }
 
-uint8_t DFRobot_BMI323::_encodeIntPin(eInterruptSource_t pin) const {
+uint8_t DFRobot_BMI323::_encodeIntPin(eInt_t pin) const
+{
   return (pin == eINT1) ? 0x01 : 0x02;
 }
 
-uint16_t DFRobot_BMI323::_mgToSlope(float threshold_mg) const {
+uint16_t DFRobot_BMI323::_mgToSlope(float threshold_mg) const
+{
   const float step = 1.953125f;
   if (threshold_mg < 0.0f) {
     threshold_mg = 0.0f;
@@ -787,7 +876,8 @@ uint16_t DFRobot_BMI323::_mgToSlope(float threshold_mg) const {
   return (uint16_t)value;
 }
 
-uint16_t DFRobot_BMI323::_msToDuration(uint16_t duration_ms) const {
+uint16_t DFRobot_BMI323::_msToDuration(uint16_t duration_ms) const
+{
   uint32_t ticks = duration_ms / 20;
   if (ticks == 0) {
     ticks = 1;
@@ -799,7 +889,8 @@ uint16_t DFRobot_BMI323::_msToDuration(uint16_t duration_ms) const {
   return (uint16_t)ticks;
 }
 
-uint8_t DFRobot_BMI323::_msToWait(uint16_t duration_ms) const {
+uint8_t DFRobot_BMI323::_msToWait(uint16_t duration_ms) const
+{
   if (duration_ms == 0) {
     return 0;
   }
@@ -812,7 +903,8 @@ uint8_t DFRobot_BMI323::_msToWait(uint16_t duration_ms) const {
   return (uint8_t)ticks;
 }
 
-bool DFRobot_BMI323::_applyFeatureEnable(void) {
+bool DFRobot_BMI323::_applyFeatureEnable(void)
+{
   if (!_initialized) {
     return false;
   }
