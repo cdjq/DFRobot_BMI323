@@ -49,7 +49,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   tiltCfg = bmi3_tilt_config(
     segment_size=90,
@@ -57,7 +57,7 @@ def setup():
     beta_acc_mean=0x00FF,
   )
 
-  if not sensor.enableTiltInt(tiltCfg, eInt_t.eINT1):
+  if not sensor.enable_tilt_int(tiltCfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable tilt interrupt!")
 
   GPIO.setwarnings(False)
@@ -72,7 +72,7 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_TILT:
       print("Tilt detected at %d ms" % (int(time.time() * 1000)))
 

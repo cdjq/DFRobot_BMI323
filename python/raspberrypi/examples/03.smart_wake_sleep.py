@@ -64,7 +64,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   sig_cfg = bmi3_sig_motion_config(
     block_size=200,
@@ -73,7 +73,7 @@ def setup():
     mcr_min=0x10,
     mcr_max=0x10,
   )
-  if not sensor.enableSigMotionInt(sig_cfg, eInt_t.eINT1):
+  if not sensor.enable_sig_motion_int(sig_cfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable sig-motion interrupt!")
 
   flat_cfg = bmi3_flat_config(
@@ -83,7 +83,7 @@ def setup():
     hysteresis=9,
     slope_thres=0xCD,
   )
-  if not sensor.enableFlatInt(flat_cfg, eInt_t.eINT2):
+  if not sensor.enable_flat_int(flat_cfg, eInt_t.eINT2):
     raise RuntimeError("Failed to enable flat interrupt!")
 
   GPIO.setwarnings(False)
@@ -101,14 +101,14 @@ def loop():
 
   if sig_motion_flag:
     sig_motion_flag = False
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_SIG_MOTION and device_state == STATE_SLEEP:
       device_state = STATE_AWAKE
       print("[%d ms] >>> Device Woke Up <<<" % int(time.time() * 1000))
 
   if flat_flag:
     flat_flag = False
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_FLAT and device_state == STATE_AWAKE:
       device_state = STATE_SLEEP
       print("[%d ms] >>> Device Entered Sleep Mode <<<" % int(time.time() * 1000))

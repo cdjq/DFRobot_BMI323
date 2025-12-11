@@ -49,7 +49,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   noMotionCfg = bmi3_no_motion_config(
     duration=9,
@@ -59,7 +59,7 @@ def setup():
     wait_time=5,
   )
 
-  if not sensor.enableNoMotionInt(noMotionCfg, eInt_t.eINT1, eAxis_t.eAxisXYZ):
+  if not sensor.enable_no_motion_int(noMotionCfg, eInt_t.eINT1, eAxis_t.eAxisXYZ):
     raise RuntimeError("Failed to enable no-motion interrupt!")
 
   GPIO.setwarnings(False)
@@ -74,7 +74,7 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_NO_MOTION:
       print("No-motion detected at %d ms" % (int(time.time() * 1000)))
 

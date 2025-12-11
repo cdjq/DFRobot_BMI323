@@ -59,7 +59,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   tapCfg = bmi3_tap_detector_config(
     axis_sel=1,
@@ -74,7 +74,7 @@ def setup():
     wait_for_timeout=1,
   )
 
-  if not sensor.enableTapInt(tapCfg, eInt_t.eINT1):
+  if not sensor.enable_tap_int(tapCfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable tap interrupt!")
 
   GPIO.setwarnings(False)
@@ -89,9 +89,9 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_TAP:
-      tapMask = sensor.readTapStatus()
+      tapMask = sensor.read_tap_status()
       if tapMask > 0:
         printTap(tapMask)
       else:

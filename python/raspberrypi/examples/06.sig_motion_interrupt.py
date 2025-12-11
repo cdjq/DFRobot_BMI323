@@ -49,7 +49,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   sigMotionCfg = bmi3_sig_motion_config(
     block_size=200,
@@ -59,7 +59,7 @@ def setup():
     mcr_max=0x10,
   )
 
-  if not sensor.enableSigMotionInt(sigMotionCfg, eInt_t.eINT1):
+  if not sensor.enable_sig_motion_int(sigMotionCfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable sig-motion interrupt!")
 
   GPIO.setwarnings(False)
@@ -74,7 +74,7 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_SIG_MOTION:
       print("Significant motion detected at %d ms" % (int(time.time() * 1000)))
 

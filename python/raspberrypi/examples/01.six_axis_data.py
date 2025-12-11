@@ -39,7 +39,7 @@ def setup():
     time.sleep(1)
 
   print("Configuring accelerometer: 50Hz, ±8g, normal mode")
-  if not sensor.configAccel(
+  if not sensor.config_accel(
     eAccelODR_t.eAccelODR50Hz,
     eAccelRange_t.eAccelRange8G,
     eAccelMode_t.eAccelModeNormal,
@@ -47,7 +47,7 @@ def setup():
     raise RuntimeError("Accel config failed!")
 
   print("Configuring gyroscope: 800Hz, ±2000dps, normal mode")
-  if not sensor.configGyro(
+  if not sensor.config_gyro(
     eGyroODR_t.eGyroODR800Hz,
     eGyroRange_t.eGyroRange2000DPS,
     eGyroMode_t.eGyroModeNormal,
@@ -58,7 +58,7 @@ def setup():
 
 
 def loop():
-  if sensor.getAccelGyroData(accel, gyro):
+  if sensor.get_accel_gyro_data(accel, gyro):
     print("Accel (g)  : %8.3f, %8.3f, %8.3f" % (accel.x, accel.y, accel.z))
     print("Gyro (dps) : %8.2f, %8.2f, %8.2f" % (gyro.x, gyro.y, gyro.z))
     print("---")

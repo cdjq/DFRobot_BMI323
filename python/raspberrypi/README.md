@@ -82,7 +82,7 @@ python 01.six_axis_data.py
       @retval ERR_DATA_BUS or ERR_IC_VERSION Initialization failed
       """
 
-  def configAccel(self, odr, range_val, mode=eAccelMode_t.eAccelModeNormal):
+  def config_accel(self, odr, range_val, mode=eAccelMode_t.eAccelModeNormal):
       """Configure accelerometer.
       @param odr Output data rate selection (see: eAccelODR_t)
       @n Available rates:
@@ -120,7 +120,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def configGyro(self, odr, range_val, mode=eGyroMode_t.eGyroModeNormal):
+  def config_gyro(self, odr, range_val, mode=eGyroMode_t.eGyroModeNormal):
       """Configure gyroscope.
       @param odr Output data rate selection (see: eGyroODR_t)
       @n Available rates:
@@ -159,7 +159,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def getAccelGyroData(self, accel, gyro):
+  def get_accel_gyro_data(self, accel, gyro):
       """Read accelerometer and gyroscope simultaneously and return physical units.
       @details Read accelerometer and gyroscope raw data at once, convert to g/dps and return
       @param accel Accelerometer output
@@ -169,7 +169,7 @@ python 01.six_axis_data.py
       @retval False Read failed
       """
 
-  def enableStepCounterInt(self, pin):
+  def enable_step_counter_int(self, pin):
       """Enable step counter interrupt function.
       @details Configure step counter function and map to specified interrupt pin, interrupt will be triggered when step count changes
       @param pin Bound interrupt pin (eINT1 or eINT2)
@@ -178,13 +178,13 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def readStepCounter(self):
+  def read_step_counter(self):
       """Read step counter data.
       @return uint16_t Step count value (16-bit, saturated at 0xFFFF).
       @retval 0 Step counter read failed
       """
 
-  def getIntStatus(self):
+  def get_int_status(self):
       """Get interrupt status.
       @details Read and combine interrupt status from both INT1 and INT2 pins, The return value is the OR combination of INT1 and INT2 status registers.
       @return uint16_t Combined interrupt status register value (INT1 | INT2). Each bit represents a different interrupt type:
@@ -198,7 +198,7 @@ python 01.six_axis_data.py
       @n - BMI3_INT_STATUS_TAP: Tap detected
       """
 
-  def enableAnyMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+  def enable_any_motion_int(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
       """Configure any-motion threshold interrupt (using official structure parameters).
       @param config Any-motion configuration structure (see bmi3_any_motion_config)
       @n Parameter description:
@@ -215,7 +215,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def enableNoMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+  def enable_no_motion_int(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
       """Configure no-motion threshold interrupt (using official structure parameters).
       @param config No-motion detection configuration structure (see bmi3_no_motion_config)
       @n Parameter description:
@@ -232,7 +232,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def enableSigMotionInt(self, config, pin):
+  def enable_sig_motion_int(self, config, pin):
       """Configure significant motion detection interrupt (using official structure parameters).
       @param config Significant motion configuration structure (see bmi3_sig_motion_config)
       @n Parameter description:
@@ -247,7 +247,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def enableFlatInt(self, config, pin):
+  def enable_flat_int(self, config, pin):
       """Configure flat detection interrupt (using official structure parameters).
       @param config Flat detection configuration structure (see bmi3_flat_config)
       @n Parameter description:
@@ -265,7 +265,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def enableOrientationInt(self, config, pin):
+  def enable_orientation_int(self, config, pin):
       """Configure orientation detection interrupt (using official structure parameters).
       @param config Orientation detection configuration structure (see bmi3_orientation_config)
       @n Parameter description:
@@ -282,7 +282,7 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def readOrientation(self):
+  def read_orientation(self):
       """Read orientation detection output.
       @return tuple (portraitLandscape, faceUpDown) or (None, None) on failure
       @n portraitLandscape: Portrait/Landscape status
@@ -297,7 +297,7 @@ python 01.six_axis_data.py
       @retval (None, None) Read failed or feature not enabled
       """
 
-  def enableTapInt(self, config, pin, enableSingle=True, enableDouble=True, enableTriple=True):
+  def enable_tap_int(self, config, pin, enableSingle=True, enableDouble=True, enableTriple=True):
       """Configure tap detection interrupt (using official structure parameters).
       @param config Tap detection configuration structure (see bmi3_tap_detector_config)
       @n Key parameters (refer to tap.c):
@@ -313,14 +313,14 @@ python 01.six_axis_data.py
       @retval False Configuration failed
       """
 
-  def readTapStatus(self):
+  def read_tap_status(self):
       """Read tap detection status (single/double/triple tap).
       @return uint8_t Output mask (can combine BMI3_TAP_DET_STATUS_SINGLE/DOUBLE/TRIPLE), 0 on failure
       @retval Bitmask Read successful
       @retval 0 Read failed
       """
 
-  def enableTiltInt(self, config, pin):
+  def enable_tilt_int(self, config, pin):
       """Configure tilt detection interrupt (using official structure parameters).
       @param config Tilt detection configuration structure (see bmi3_tilt_config)
       @n Key parameters (refer to tilt.c):

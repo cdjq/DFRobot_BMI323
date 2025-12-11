@@ -48,9 +48,9 @@ def setup():
     print("I2C init failed, retry in 1s")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
-  if not sensor.enableStepCounterInt(eInt_t.eINT1):
+  if not sensor.enable_step_counter_int(eInt_t.eINT1):
     raise RuntimeError("Enable step counter interrupt failed!")
 
   GPIO.setwarnings(False)
@@ -68,9 +68,9 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_STEP_DETECTOR:
-      steps = sensor.readStepCounter()
+      steps = sensor.read_step_counter()
       if steps > 0:
         print("Steps: %d" % steps)
 

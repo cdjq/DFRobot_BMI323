@@ -79,7 +79,7 @@ python 01.six_axis_data.py
       @retval ERR_DATA_BUS 或 ERR_IC_VERSION 初始化失败
       """
 
-  def configAccel(self, odr, range_val, mode=eAccelMode_t.eAccelModeNormal):
+  def config_accel(self, odr, range_val, mode=eAccelMode_t.eAccelModeNormal):
       """配置加速度计。
       @param odr 输出数据速率选择（参见：eAccelODR_t）
       @n 可用速率：
@@ -117,7 +117,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def configGyro(self, odr, range_val, mode=eGyroMode_t.eGyroModeNormal):
+  def config_gyro(self, odr, range_val, mode=eGyroMode_t.eGyroModeNormal):
       """配置陀螺仪。
       @param odr 输出数据速率选择（参见：eGyroODR_t）
       @n 可用速率：
@@ -156,7 +156,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def getAccelGyroData(self, accel, gyro):
+  def get_accel_gyro_data(self, accel, gyro):
       """同时读取加速度计和陀螺仪数据并返回物理单位。
       @details 一次性读取加速度计和陀螺仪原始数据，转换为 g/dps 并返回
       @param accel 加速度计输出
@@ -166,7 +166,7 @@ python 01.six_axis_data.py
       @retval False 读取失败
       """
 
-  def enableStepCounterInt(self, pin):
+  def enable_step_counter_int(self, pin):
       """使能计步器中断功能。
       @details 配置计步器功能并映射到指定的中断引脚，当步数变化时将触发中断
       @param pin 绑定的中断引脚（eINT1 或 eINT2）
@@ -175,13 +175,13 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def readStepCounter(self):
+  def read_step_counter(self):
       """读取计步器数据。
       @return uint16_t 步数值（16 位，饱和值为 0xFFFF）。
       @retval 0 读取失败
       """
 
-  def getIntStatus(self):
+  def get_int_status(self):
       """获取中断状态。
       @details 读取并合并 INT1 和 INT2 引脚的中断状态，返回值为 INT1 和 INT2 状态寄存器的 OR 组合。
       @return uint16_t 合并的中断状态寄存器值（INT1 | INT2）。每一位代表不同的中断类型：
@@ -195,7 +195,7 @@ python 01.six_axis_data.py
       @n - BMI3_INT_STATUS_TAP: 检测到敲击
       """
 
-  def enableAnyMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+  def enable_any_motion_int(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
       """配置任意运动阈值中断（使用官方结构体参数）。
       @param config 任意运动配置结构体（参见 bmi3_any_motion_config）
       @n 参数说明：
@@ -212,7 +212,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def enableNoMotionInt(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
+  def enable_no_motion_int(self, config, pin, axisMask=eAxis_t.eAxisXYZ):
       """配置无运动阈值中断（使用官方结构体参数）。
       @param config 无运动检测配置结构体（参见 bmi3_no_motion_config）
       @n 参数说明：
@@ -229,7 +229,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def enableSigMotionInt(self, config, pin):
+  def enable_sig_motion_int(self, config, pin):
       """配置显著运动检测中断（使用官方结构体参数）。
       @param config 显著运动配置结构体（参见 bmi3_sig_motion_config）
       @n 参数说明：
@@ -244,7 +244,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def enableFlatInt(self, config, pin):
+  def enable_flat_int(self, config, pin):
       """配置平面检测中断（使用官方结构体参数）。
       @param config 平面检测配置结构体（参见 bmi3_flat_config）
       @n 参数说明：
@@ -262,7 +262,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def enableOrientationInt(self, config, pin):
+  def enable_orientation_int(self, config, pin):
       """配置方向检测中断（使用官方结构体参数）。
       @param config 方向检测配置结构体（参见 bmi3_orientation_config）
       @n 参数说明：
@@ -279,7 +279,7 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def readOrientation(self):
+  def read_orientation(self):
       """读取方向检测输出。
       @return tuple (portraitLandscape, faceUpDown) 或失败时返回 (None, None)
       @n portraitLandscape: 横竖屏状态
@@ -294,7 +294,7 @@ python 01.six_axis_data.py
       @retval (None, None) 读取失败或功能未使能
       """
 
-  def enableTapInt(self, config, pin, enableSingle=True, enableDouble=True, enableTriple=True):
+  def enable_tap_int(self, config, pin, enableSingle=True, enableDouble=True, enableTriple=True):
       """配置敲击检测中断（使用官方结构体参数）。
       @param config 敲击检测配置结构体（参见 bmi3_tap_detector_config）
       @n 关键参数（参考 tap.c）：
@@ -310,14 +310,14 @@ python 01.six_axis_data.py
       @retval False 配置失败
       """
 
-  def readTapStatus(self):
+  def read_tap_status(self):
       """读取敲击检测状态（单击/双击/三击）。
       @return uint8_t 输出掩码（可组合 BMI3_TAP_DET_STATUS_SINGLE/DOUBLE/TRIPLE），失败时返回 0
       @retval Bitmask 读取成功
       @retval 0 读取失败
       """
 
-  def enableTiltInt(self, config, pin):
+  def enable_tilt_int(self, config, pin):
       """配置倾斜检测中断（使用官方结构体参数）。
       @param config 倾斜检测配置结构体（参见 bmi3_tilt_config）
       @n 关键参数（参考 tilt.c）：

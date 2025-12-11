@@ -64,7 +64,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   any_cfg = bmi3_any_motion_config(
     duration=9,
@@ -73,7 +73,7 @@ def setup():
     hysteresis=5,
     wait_time=4,
   )
-  if not sensor.enableAnyMotionInt(any_cfg, eInt_t.eINT1, eAxis_t.eAxisXYZ):
+  if not sensor.enable_any_motion_int(any_cfg, eInt_t.eINT1, eAxis_t.eAxisXYZ):
     raise RuntimeError("Failed to enable any-motion interrupt!")
 
   no_cfg = bmi3_no_motion_config(
@@ -83,7 +83,7 @@ def setup():
     hysteresis=5,
     wait_time=5,
   )
-  if not sensor.enableNoMotionInt(no_cfg, eInt_t.eINT2, eAxis_t.eAxisXYZ):
+  if not sensor.enable_no_motion_int(no_cfg, eInt_t.eINT2, eAxis_t.eAxisXYZ):
     raise RuntimeError("Failed to enable no-motion interrupt!")
 
   GPIO.setwarnings(False)
@@ -101,14 +101,14 @@ def loop():
 
   if any_motion_flag:
     any_motion_flag = False
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_ANY_MOTION and current_state != STATE_MOVING:
       current_state = STATE_MOVING
       print("[%d ms] I'm moving" % int(time.time() * 1000))
 
   if no_motion_flag:
     no_motion_flag = False
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_NO_MOTION and current_state != STATE_STILL:
       current_state = STATE_STILL
       print("[%d ms] I've stopped" % int(time.time() * 1000))

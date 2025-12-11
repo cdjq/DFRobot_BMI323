@@ -54,7 +54,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   flatCfg = bmi3_flat_config(
     theta=9,
@@ -64,7 +64,7 @@ def setup():
     slope_thres=0xCD,
   )
 
-  if not sensor.enableFlatInt(flatCfg, eInt_t.eINT1):
+  if not sensor.enable_flat_int(flatCfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable flat interrupt!")
 
   GPIO.setwarnings(False)
@@ -79,7 +79,7 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_FLAT:
       print("Flat surface detected at %d ms" % (int(time.time() * 1000)))
 

@@ -71,7 +71,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
-  sensor.configAccel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
+  sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   orientCfg = bmi3_orientation_config(
     ud_en=BMI3_ENABLE,
@@ -83,7 +83,7 @@ def setup():
     blocking=3,
   )
 
-  if not sensor.enableOrientationInt(orientCfg, eInt_t.eINT1):
+  if not sensor.enable_orientation_int(orientCfg, eInt_t.eINT1):
     raise RuntimeError("Failed to enable orientation interrupt!")
 
   GPIO.setwarnings(False)
@@ -98,9 +98,9 @@ def loop():
   if interrupt_flag:
     interrupt_flag = False
 
-    status = sensor.getIntStatus()
+    status = sensor.get_int_status()
     if status & BMI3_INT_STATUS_ORIENTATION:
-      pl, fud = sensor.readOrientation()
+      pl, fud = sensor.read_orientation()
       if pl is not None and fud is not None:
         print("Orientation: ", end="")
         printOrientation(pl, fud)
