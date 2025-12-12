@@ -54,6 +54,7 @@ def setup():
   ):
     raise RuntimeError("Gyro config failed!")
 
+  time.sleep(1)
   print("Setup complete, streaming data...\n")
 
 

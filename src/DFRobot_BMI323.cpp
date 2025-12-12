@@ -20,11 +20,12 @@ static DFRobot_BMI323 *g_bmi323_instance = NULL;
 
 DFRobot_BMI323::DFRobot_BMI323(TwoWire *wire, uint8_t i2cAddr)
 {
-  _wire        = wire;
-  _initialized = false;
-  _accelRange  = 2.0f;
-  _gyroRange   = 250.0f;
-  _i2cAddr     = i2cAddr;
+  _wire                 = wire;
+  _initialized          = false;
+  _featureAccConfigFlag = false;
+  _accelRange           = 2.0f;
+  _gyroRange            = 250.0f;
+  _i2cAddr              = i2cAddr;
   memset(&_dev, 0, sizeof(_dev));
   memset(&_intMapConfig, 0, sizeof(_intMapConfig));
   memset(&_featureEnable, 0, sizeof(_featureEnable));
@@ -222,6 +223,9 @@ bool DFRobot_BMI323::configAccel(eAccelODR_t odr, eAccelRange_t range, eAccelMod
       break;
   }
 
+  // Set accelerometer configuration flag for advanced features
+  _featureAccConfigFlag = true;
+
   return true;
 }
 
@@ -351,6 +355,37 @@ bool DFRobot_BMI323::enableStepCounterInt(eInt_t pin)
     return false;
   }
 
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
+    return false;
+  }
+
+  // Check accelerometer configuration: in low power mode, ODR must be >= 50Hz for step counter
+  // This validation is normally done in set_step_config, but we need to check it here
+  // since we need to ensure compatibility before enabling step counter
+  struct bmi3_sens_config accelConfig;
+  accelConfig.type = BMI323_ACCEL;
+  int8_t rslt      = bmi323_get_sensor_config(&accelConfig, 1, &_dev);
+  if (rslt != BMI323_OK) {
+    // Cannot read accelerometer configuration
+    return false;
+  }
+
+  // Get and set step counter configuration to trigger validation
+  // This ensures compatibility checks are performed even if using default config
+  struct bmi3_sens_config stepConfig;
+  stepConfig.type = BMI323_STEP_COUNTER;
+  rslt            = bmi323_get_sensor_config(&stepConfig, 1, &_dev);
+  if (rslt != BMI323_OK) {
+    return false;
+  }
+
+  // Set step counter configuration (this will validate ODR requirements)
+  rslt = bmi323_set_sensor_config(&stepConfig, 1, &_dev);
+  if (rslt != BMI323_OK) {
+    return false;
+  }
+
   // Enable step counter and step detector features
   _featureEnable.step_counter_en  = BMI3_ENABLE;
   _featureEnable.step_detector_en = BMI3_ENABLE;
@@ -470,6 +505,11 @@ bool DFRobot_BMI323::enableSigMotionInt(const struct bmi3_sig_motion_config &con
     return false;
   }
 
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
+    return false;
+  }
+
   if (!_configureIntPin(pin)) {
     return false;
   }
@@ -513,6 +553,11 @@ bool DFRobot_BMI323::enableFlatInt(const struct bmi3_flat_config &config, eInt_t
     return false;
   }
 
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
+    return false;
+  }
+
   if (!_configureIntPin(pin)) {
     return false;
   }
@@ -553,6 +598,11 @@ bool DFRobot_BMI323::enableFlatInt(const struct bmi3_flat_config &config, eInt_t
 bool DFRobot_BMI323::enableOrientationInt(const struct bmi3_orientation_config &config, eInt_t pin)
 {
   if (!_initialized) {
+    return false;
+  }
+
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
     return false;
   }
 
@@ -625,6 +675,11 @@ bool DFRobot_BMI323::enableTapInt(const struct bmi3_tap_detector_config &config,
     return false;
   }
 
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
+    return false;
+  }
+
   if (!_configureIntPin(pin)) {
     return false;
   }
@@ -681,6 +736,11 @@ bool DFRobot_BMI323::readTapStatus(uint8_t *tapMask)
 bool DFRobot_BMI323::enableTiltInt(const struct bmi3_tilt_config &config, eInt_t pin)
 {
   if (!_initialized) {
+    return false;
+  }
+
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
     return false;
   }
 
@@ -759,6 +819,11 @@ bool DFRobot_BMI323::_readVector(uint8_t sensor_type, sSensorData *data, float r
 bool DFRobot_BMI323::_configureMotionInterrupt(bool anyMotion, const struct bmi3_any_motion_config *anyConfig, const struct bmi3_no_motion_config *noConfig, eInt_t pin, uint8_t axisMask)
 {
   if (!_initialized) {
+    return false;
+  }
+
+  // Check if accelerometer has been configured
+  if (!_featureAccConfigFlag) {
     return false;
   }
 

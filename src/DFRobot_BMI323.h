@@ -455,7 +455,8 @@ private:
   struct bmi3_dev _dev;    ///< BMI3 device structure
 
   /** Internal flags */
-  bool _initialized;    ///< Initialization flag
+  bool _initialized;             ///< Initialization flag
+  bool _featureAccConfigFlag;    ///< Accelerometer configuration flag for advanced features
 
   /** Current accelerometer range (for unit conversion) */
   float _accelRange;    ///< Accelerometer range (unit: g)

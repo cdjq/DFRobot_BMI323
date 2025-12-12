@@ -139,7 +139,7 @@ void setup()
 #if defined(ESP32)
   attachInterrupt(digitalPinToInterrupt(13 /*D7*/), interruptNoMotion, RISING);
 #elif defined(ESP8266)
-  attachInterrupt(digitalPinToInterrupt(10), interruptNoMotion, RISING);
+  attachInterrupt(digitalPinToInterrupt(15), interruptNoMotion, RISING);
 #elif defined(ARDUINO_SAM_ZERO)
   attachInterrupt(digitalPinToInterrupt(7), interruptNoMotion, RISING);
 #else
