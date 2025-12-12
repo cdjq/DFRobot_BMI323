@@ -59,6 +59,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
+  # Note: If low power mode is selected, ODR must be at least 200Hz
   sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   tapCfg = bmi3_tap_detector_config(

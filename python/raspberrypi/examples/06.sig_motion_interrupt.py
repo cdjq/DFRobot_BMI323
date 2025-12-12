@@ -49,6 +49,7 @@ def setup():
     print("IMU init failed, retrying...")
     time.sleep(1)
 
+  # Note: If low power mode is selected, ODR must be at least 50Hz
   sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   sigMotionCfg = bmi3_sig_motion_config(

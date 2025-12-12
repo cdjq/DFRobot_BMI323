@@ -48,6 +48,7 @@ def setup():
     print("I2C init failed, retry in 1s")
     time.sleep(1)
 
+  # Note: If low power mode is selected, ODR must be at least 50Hz
   sensor.config_accel(eAccelODR_t.eAccelODR50Hz, eAccelRange_t.eAccelRange8G, eAccelMode_t.eAccelModeNormal)
 
   if not sensor.enable_step_counter_int(eInt_t.eINT1):

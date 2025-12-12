@@ -640,6 +640,12 @@ class DFRobot_BMI323:
       logger.error("Sensor not initialized")
       return False
 
+    # Validate ODR range based on operating mode
+    is_valid, error_msg = self._validate_odr_range(odr, mode, 'accel')
+    if not is_valid:
+      logger.error("Accel ODR validation failed: %s", error_msg)
+      return False
+
     try:
       reg_data = self._read_regs(BMI3_REG_ACC_CONF, 2)
       if reg_data is None or len(reg_data) < 2:
@@ -739,6 +745,12 @@ class DFRobot_BMI323:
     """
     if not self._initialized:
       logger.error("Sensor not initialized")
+      return False
+
+    # Validate ODR range based on operating mode
+    is_valid, error_msg = self._validate_odr_range(odr, mode, 'gyro')
+    if not is_valid:
+      logger.error("Gyro ODR validation failed: %s", error_msg)
       return False
 
     try:
@@ -857,6 +869,12 @@ class DFRobot_BMI323:
     """
     if not self._initialized:
       logger.error("Sensor not initialized")
+      return False
+
+    # Validate ODR requirement: at least 50Hz in low power mode
+    is_valid, error_msg = self._validate_feature_odr_requirement('step_counter', 50.0)
+    if not is_valid:
+      logger.error("Step counter ODR validation failed: %s", error_msg)
       return False
 
     try:
@@ -1060,6 +1078,12 @@ class DFRobot_BMI323:
       logger.error("Config is None")
       return False
 
+    # Validate ODR requirement: at least 50Hz in low power mode
+    is_valid, error_msg = self._validate_feature_odr_requirement('sig_motion', 50.0)
+    if not is_valid:
+      logger.error("Sig-motion ODR validation failed: %s", error_msg)
+      return False
+
     try:
       if not self._configureIntPin(pin):
         logger.error("Configure interrupt pin failed")
@@ -1239,6 +1263,12 @@ class DFRobot_BMI323:
       logger.error("Config is None")
       return False
 
+    # Validate ODR requirement: at least 200Hz in low power mode
+    is_valid, error_msg = self._validate_feature_odr_requirement('tap', 200.0)
+    if not is_valid:
+      logger.error("Tap ODR validation failed: %s", error_msg)
+      return False
+
     try:
       if not self._configureIntPin(pin):
         logger.error("Configure interrupt pin failed")
@@ -1385,6 +1415,115 @@ class DFRobot_BMI323:
   def _delay_ms(self, period):
     """Delay in milliseconds."""
     time.sleep(period / 1000.0)
+
+  def _odr_to_hz(self, odr):
+    """Convert ODR enum value to frequency in Hz.
+    @param odr ODR enum value (eAccelODR_t or eGyroODR_t)
+    @return float Frequency in Hz, or None if invalid
+    """
+    # ODR values are the same for both accelerometer and gyroscope
+    odr_map = {
+      0x01: 0.78125,  # eAccelODR0_78125Hz / eGyroODR0_78125Hz
+      0x02: 1.5625,  # eAccelODR1_5625Hz / eGyroODR1_5625Hz
+      0x03: 3.125,  # eAccelODR3_125Hz / eGyroODR3_125Hz
+      0x04: 6.25,  # eAccelODR6_25Hz / eGyroODR6_25Hz
+      0x05: 12.5,  # eAccelODR12_5Hz / eGyroODR12_5Hz
+      0x06: 25.0,  # eAccelODR25Hz / eGyroODR25Hz
+      0x07: 50.0,  # eAccelODR50Hz / eGyroODR50Hz
+      0x08: 100.0,  # eAccelODR100Hz / eGyroODR100Hz
+      0x09: 200.0,  # eAccelODR200Hz / eGyroODR200Hz
+      0x0A: 400.0,  # eAccelODR400Hz / eGyroODR400Hz
+      0x0B: 800.0,  # eAccelODR800Hz / eGyroODR800Hz
+      0x0C: 1600.0,  # eAccelODR1600Hz / eGyroODR1600Hz
+      0x0D: 3200.0,  # eAccelODR3200Hz / eGyroODR3200Hz
+      0x0E: 6400.0,  # eAccelODR6400Hz / eGyroODR6400Hz
+    }
+    return odr_map.get(odr)
+
+  def _validate_odr_range(self, odr, mode, sensor_type='accel'):
+    """Validate ODR range based on operating mode.
+    @param odr ODR enum value
+    @param mode Operating mode (eAccelMode_t or eGyroMode_t)
+    @param sensor_type 'accel' or 'gyro'
+    @return tuple (is_valid, error_message)
+    """
+    odr_hz = self._odr_to_hz(odr)
+    if odr_hz is None:
+      return (False, f"Invalid ODR value: 0x{odr:02X}")
+
+    # Define ODR range limits based on mode
+    if mode == eAccelMode_t.eAccelModeLowPower or mode == eGyroMode_t.eGyroModeLowPower:
+      min_odr = 0.78
+      max_odr = 400.0
+      mode_name = "Low power"
+    elif mode == eAccelMode_t.eAccelModeNormal or mode == eGyroMode_t.eGyroModeNormal:
+      min_odr = 12.5
+      max_odr = 6400.0
+      mode_name = "Normal"
+    elif mode == eAccelMode_t.eAccelModeHighPerf or mode == eGyroMode_t.eGyroModeHighPerf:
+      min_odr = 12.5
+      max_odr = 6400.0
+      mode_name = "High performance"
+    else:
+      return (False, f"Invalid mode value: {mode}")
+
+    if odr_hz < min_odr or odr_hz > max_odr:
+      return (False, f"{sensor_type.capitalize()} ODR {odr_hz}Hz is out of range for {mode_name} mode (allowed: {min_odr}Hz ~ {max_odr}Hz)")
+
+    return (True, None)
+
+  def _get_accel_config(self):
+    """Read current accelerometer configuration (ODR and mode).
+    @return tuple (odr, mode) or (None, None) on failure
+    """
+    try:
+      reg_data = self._read_regs(BMI3_REG_ACC_CONF, 2)
+      if reg_data is None or len(reg_data) < 2:
+        return (None, None)
+
+      # Extract ODR (bits 0-3 of byte 0)
+      odr = reg_data[0] & BMI3_ACC_ODR_MASK
+
+      # Extract mode (bits 12-14 of byte 1, which is the high byte)
+      mode_raw = (reg_data[1] << 8) | reg_data[0]
+      mode_bits = (mode_raw & BMI3_ACC_MODE_MASK) >> BMI3_ACC_MODE_POS
+
+      # Convert mode bits to enum value
+      if mode_bits == BMI3_ACC_MODE_LOW_PWR:
+        mode = eAccelMode_t.eAccelModeLowPower
+      elif mode_bits == BMI3_ACC_MODE_NORMAL:
+        mode = eAccelMode_t.eAccelModeNormal
+      elif mode_bits == BMI3_ACC_MODE_HIGH_PERF:
+        mode = eAccelMode_t.eAccelModeHighPerf
+      else:
+        mode = None
+
+      return (odr, mode)
+    except Exception as e:
+      logger.error("Failed to read accel config: %s", str(e))
+      return (None, None)
+
+  def _validate_feature_odr_requirement(self, feature_name, min_odr_hz_low_power):
+    """Validate ODR requirement for specific features.
+    @param feature_name Name of the feature (e.g., 'sig_motion', 'step_counter', 'tap')
+    @param min_odr_hz_low_power Minimum ODR in Hz required for low power mode
+    @return tuple (is_valid, error_message)
+    """
+    odr, mode = self._get_accel_config()
+    if odr is None or mode is None:
+      return (False, f"Failed to read accelerometer configuration for {feature_name} feature")
+
+    odr_hz = self._odr_to_hz(odr)
+    if odr_hz is None:
+      return (False, f"Invalid ODR value (0x{odr:02X}) for {feature_name} feature")
+
+    # Check ODR requirement based on mode
+    if mode == eAccelMode_t.eAccelModeLowPower:
+      if odr_hz < min_odr_hz_low_power:
+        return (False, f"{feature_name} feature requires ODR >= {min_odr_hz_low_power}Hz in low power mode, but current ODR is {odr_hz}Hz")
+    # For normal and high performance modes, no additional ODR requirement beyond the basic range
+
+    return (True, None)
 
   def _lsb_to_g(self, val, g_range):
     half_scale = 32768.0
