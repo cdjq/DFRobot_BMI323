@@ -565,6 +565,18 @@ private:
    * @return int8_t BMI3_OK indicates success
    */
   int8_t getSensorRawData(int16_t *data);
+
+  /**
+   * @fn _setAxisRemap
+   * @brief Internal function: Set axis remap configuration (ZYX axis mapping with inverted Z axis)
+   * @details This function configures the axis remapping as: ZYX axis mapping with inverted Z axis
+   * @n @note: XYZ axis denotes x = x, y = y, z = z
+   * @n Similarly, ZYX means x = z, y = y, z = x
+   * @return bool type, indicates the configuration status
+   * @retval true Configuration successful
+   * @retval false Configuration failed
+   */
+  bool _setAxisRemap(void);
 };
 
 #endif

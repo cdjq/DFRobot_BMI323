@@ -62,6 +62,12 @@ bool DFRobot_BMI323::begin(void)
   }
 
   _initialized = true;
+
+  // Set axis remap
+  if (!_setAxisRemap()) {
+    return false;
+  }
+  
   return true;
 }
 
@@ -975,4 +981,31 @@ bool DFRobot_BMI323::_applyFeatureEnable(void)
   }
 
   return (bmi323_select_sensor(&_featureEnable, &_dev) == BMI323_OK);
+}
+
+bool DFRobot_BMI323::_setAxisRemap(void)
+{
+  if (!_initialized) {
+    return false;
+  }
+
+  struct bmi3_axes_remap remap = { 0 };
+  int8_t rslt = bmi323_get_remap_axes(&remap, &_dev);
+  if (rslt != BMI323_OK) {
+    return false;
+  }
+
+  /* @note: XYZ axis denotes x = x, y = y, z = z
+   * Similarly,
+   *    ZYX, x = z, y = y, z = x
+   */
+  remap.axis_map = BMI3_MAP_YXZ_AXIS;
+
+  /* Invert the x, y, z axis of accelerometer and gyroscope */
+  remap.invert_x = BMI3_MAP_NEGATIVE;
+  remap.invert_y = BMI3_MAP_NEGATIVE;
+  remap.invert_z = BMI3_MAP_NEGATIVE;
+
+  rslt = bmi323_set_remap_axes(remap, &_dev);
+  return (rslt == BMI323_OK);
 }
