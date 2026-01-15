@@ -67,7 +67,7 @@ bool DFRobot_BMI323::begin(void)
   if (!_setAxisRemap()) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -990,7 +990,7 @@ bool DFRobot_BMI323::_setAxisRemap(void)
   }
 
   struct bmi3_axes_remap remap = { 0 };
-  int8_t rslt = bmi323_get_remap_axes(&remap, &_dev);
+  int8_t                 rslt  = bmi323_get_remap_axes(&remap, &_dev);
   if (rslt != BMI323_OK) {
     return false;
   }
