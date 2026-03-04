@@ -18,8 +18,9 @@ This sensor is ideal for wearable devices, smart watches, fitness trackers, and 
 
 <p align="center">
   <img src="./resources/images/SEN0693(1).png" width="45%">
-  <img src="./resources/images/SEN0693(2).png" width="40%">
+  <img src="./resources/images/SEN0693(2).png" width="45%">
 </p>
+
 
 ## Product Link (https://www.dfrobot.com)
     SKU: SEN0693

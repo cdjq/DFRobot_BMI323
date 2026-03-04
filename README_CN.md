@@ -18,8 +18,9 @@ BMI323 是一款低功耗、高性能的 6 轴 IMU 传感器，集成了 3 轴�
 
 <p align="center">
   <img src="./resources/images/SEN0693(1).png" width="45%">
-  <img src="./resources/images/SEN0693(2).png" width="40%">
+  <img src="./resources/images/SEN0693(2).png" width="45%">
 </p>
+
 
 ## 产品链接 (https://www.dfrobot.com)
     SKU: SEN0693
@@ -380,7 +381,7 @@ BMI323 是一款低功耗、高性能的 6 轴 IMU 传感器，集成了 3 轴�
 
 ## 历史
 
-- Date 2025-09-22
+- Date 2025-12-08
 - Version V1.0.0
 
 ## 创作者
