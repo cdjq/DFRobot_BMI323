@@ -179,13 +179,13 @@ To use this library, first download the library file, paste it into the \Arduino
   bool getAccelGyroData(sSensorData *accel, sSensorData *gyro);
 
   /**
-   * @fn getTempC
+   * @fn getTemperature
    * @brief Read die temperature in degrees Celsius
    * @details Reads raw temperature from the sensor and converts it using the official formula:
    * temperature (°C) = (int16_t)raw / 512.0 + 23.0. Accelerometer or gyroscope must be configured first.
    * @return float Temperature in °C, or 0.0f if the sensor is not initialized or the read fails
    */
-  float getTempC(void);
+  float getTemperature(void);
 
   /**
    * @fn enableStepCounterInt
