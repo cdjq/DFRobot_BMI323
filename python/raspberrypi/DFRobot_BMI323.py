@@ -881,6 +881,29 @@ class DFRobot_BMI323:
       logger.error("Read sensor data failed: %s", str(e))
       return False
 
+  def get_temperature(self):
+    """Read die temperature in degrees Celsius.
+    @details Reads raw temperature from the sensor and converts it using the official formula:
+    temperature (°C) = (int16_t)raw / 512.0 + 23.0. Accelerometer or gyroscope must be configured first.
+    @return float Temperature in °C, or 0.0 if the sensor is not initialized or the read fails
+    """
+    if not self._initialized:
+      logger.error("Sensor not initialized")
+      return 0.0
+
+    try:
+      reg_data = self._read_regs(BMI3_REG_TEMP_DATA, 2)
+      if reg_data is None or len(reg_data) < 2:
+        logger.error("Read temperature failed")
+        return 0.0
+
+      raw_temp = self._int16_from_bytes(reg_data[0], reg_data[1])
+      return (float(raw_temp) / 512.0) + 23.0
+
+    except Exception as e:
+      logger.error("Read temperature failed: %s", str(e))
+      return 0.0
+
   def enable_step_counter_int(self, pin):
     """Enable step counter interrupt function.
     @details Configure step counter function and map to specified interrupt pin, interrupt will be triggered when step count changes

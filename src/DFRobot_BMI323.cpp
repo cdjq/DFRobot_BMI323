@@ -327,6 +327,25 @@ bool DFRobot_BMI323::getAccelGyroData(sSensorData *accel, sSensorData *gyro)
   return true;
 }
 
+float DFRobot_BMI323::getTemperature(void)
+{
+  if (!_initialized) {
+    return 0.0f;
+  }
+
+  struct bmi3_sensor_data sensor_data;
+  memset(&sensor_data, 0, sizeof(sensor_data));
+  sensor_data.type = BMI323_TEMP;
+
+  int8_t rslt = bmi323_get_sensor_data(&sensor_data, 1, &_dev);
+  if (rslt != BMI323_OK) {
+    return 0.0f;
+  }
+
+  int16_t raw_temp = (int16_t)sensor_data.sens_data.temp.temp_data;
+  return ((float)raw_temp / 512.0f) + 23.0f;
+}
+
 // ========== Motion Detection Functions ==========
 
 int8_t DFRobot_BMI323::readStepCounter(uint16_t *stepVal)

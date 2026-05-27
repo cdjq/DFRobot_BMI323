@@ -179,6 +179,15 @@ BMI323 是一款低功耗、高性能的 6 轴 IMU 传感器，集成了 3 轴�
   bool getAccelGyroData(sSensorData *accel, sSensorData *gyro);
 
   /**
+   * @fn getTempC
+   * @brief 读取芯片温度（摄氏度）
+   * @details 从传感器读取温度原始值，并按官方公式换算：温度(°C) = (int16_t)raw / 512.0 + 23.0。
+   * 需先配置加速度计或陀螺仪。
+   * @return float 温度值（单位：°C）；若传感器未初始化或读取失败则返回 0.0f
+   */
+  float getTempC(void);
+
+  /**
    * @fn enableStepCounterInt
    * @brief 使能计步器中断功能
    * @details 配置计步器功能并映射到指定的中断引脚，当步数变化时将触发中断
