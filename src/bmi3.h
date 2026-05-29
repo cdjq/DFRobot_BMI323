@@ -36,6 +36,7 @@
 *
 */
 
+
 /*!
  * @defgroup bmi3 BMI3
  */
